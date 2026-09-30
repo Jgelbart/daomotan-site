@@ -9,6 +9,8 @@ public web page needs:
   - EXIT GAME goes back to the arcade (../), not to the robot's media library;
   - B9 Sans, the droid's own letterforms, comes from arcade/fonts/, not the
     robot's /library/;
+  - the games' music engine is copied to arcade/music/engine.js, for the
+    lobby's own arrangement of the NAN II Theme (arcade/music/lobby.js);
   - every page is marked window.DAOMOTAN_ARCADE, so a page can tell it is on
     the web. NAN II Facemaker uses it: it starts from a copy of NAN II's real
     faces (faces.json, copied here) and saves in the visitor's browser.
@@ -30,6 +32,7 @@ import sys
 HOME = os.path.expanduser("~")
 SHELF = os.path.join(HOME, "b9-games")
 FONT = os.path.join(HOME, "b9", "library", "B9Sans.ttf")
+ENGINE = os.path.join(HOME, "b9-music", "B9 Theme", "source", "engine.js")
 # NAN II's real faces, for Facemaker's starting set. The mirror has the board's own; while the
 # NAN II rename waits for the robot (2026-09-30), its branch has the set with the new mark.
 FACES = [os.path.join(HOME, "b9-nan2-rename", "library", "b9_expressions.json"),
@@ -79,6 +82,8 @@ def sync(title, slug):
 if __name__ == "__main__":
     os.makedirs(os.path.join(ARCADE, "fonts"), exist_ok=True)
     shutil.copy2(FONT, os.path.join(ARCADE, "fonts", "B9Sans.ttf"))
+    os.makedirs(os.path.join(ARCADE, "music"), exist_ok=True)
+    shutil.copy2(ENGINE, os.path.join(ARCADE, "music", "engine.js"))
     for title, slug in GAMES:
         sync(title, slug)
     faces = next(p for p in FACES if os.path.exists(p))

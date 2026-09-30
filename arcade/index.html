@@ -32,6 +32,12 @@
   .bar{ display:flex; align-items:center; justify-content:space-between; gap:16px; height:60px; }
   .bar a{ text-decoration:none; color:var(--dim); letter-spacing:.12em; text-transform:uppercase; font-size:13px; }
   .bar a:hover{ color:var(--ink); }
+  .music{ font:inherit; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim);
+          background:none; border:1px solid var(--line); border-radius:999px; padding:6px 12px; cursor:pointer; white-space:nowrap; }
+  .music:hover{ color:var(--ink); border-color:rgba(98,255,126,.6); }
+  .music[aria-pressed='true']{ color:var(--ink); border-color:rgba(98,255,126,.7); text-shadow:var(--glow); }
+  @media (max-width:600px){ .music .word{ display:none; } .bar b{ display:none; } }   /* the page's own heading names it */
+  .bar a, .bar b{ white-space:nowrap; }
   .bar b{ font-family:var(--mark); font-weight:400; color:var(--ink); letter-spacing:.14em; text-shadow:var(--glow); }
 
   /* the tube: the boot screen, full width, never taller than the window */
@@ -84,6 +90,7 @@
   <div class="wrap bar">
     <a href="../">&larr; DAOMOTAN</a>
     <b>NAN II<sup class="tm">&trade;</sup> ARCADE</b>
+    <button class="music" id="music" type="button" aria-pressed="false" aria-label="Music" title="The NAN II Theme, dreamy, for the arcade">&#9835; <span class="word">Music</span> <span class="state">OFF</span></button>
   </div>
 </header>
 
@@ -168,5 +175,7 @@
 </footer>
 
 <script src="daomsys.js"></script>
+<script src="music/engine.js"></script>
+<script src="music/lobby.js"></script>
 </body>
 </html>
