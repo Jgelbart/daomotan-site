@@ -73,8 +73,8 @@
   .bar { display: flex; align-items: center; justify-content: space-between; gap: 24px; height: 68px; }
   .wordmark { text-decoration: none; display: flex; align-items: baseline; gap: 14px; }
   .wordmark b { font-family: var(--wide); font-weight: 400; font-size: 20px; letter-spacing: 0.04em; }
-  .wordmark span { font-family: var(--body); font-stretch: 125%; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); }
-  nav { display: flex; gap: 28px; }
+  .wordmark span { white-space: nowrap; font-family: var(--body); font-stretch: 125%; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); }
+  nav { display: flex; gap: 20px; }
   nav a { text-decoration: none; font-family: var(--mono); font-size: 14px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
   nav a.arcade { color: var(--rust); }
   @media (max-width: 1180px) { .wordmark span { display: none; } nav { gap: 20px; } }
@@ -237,6 +237,7 @@
   footer .wrap { display: flex; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
   footer .label { color: var(--muted); font-size: 13px; }
   footer .credit { flex-basis: 100%; margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .tm { font-size: .45em; vertical-align: super; line-height: 0; margin-left: .08em; letter-spacing: 0; }
 
   @media (max-width: 1000px) {
     .features { grid-template-columns: repeat(2, 1fr); }
@@ -269,7 +270,7 @@
 
 <header>
   <div class="wrap bar">
-    <a class="wordmark" href="#top" aria-label="DAOMOTAN home"><b>DAOMOTAN</b><span>Personal Robotics</span></a>
+    <a class="wordmark" href="#top" aria-label="DAOMOTAN home"><b>DAOMOTAN<sup class="tm">&trade;</sup></b><span>Personal Robotics</span></a>
     <nav>
       <a href="#nan">What NAN II does</a>
       <a href="#custom">Make it yours</a>
@@ -292,10 +293,10 @@
 
   <div class="intro">
     <div class="wrap intro-grid">
-      <div class="label">Model NAN II · Link offline</div>
+      <div class="label">Model NAN II<sup class="tm">&trade;</sup> · Link offline</div>
       <h1>Meet NAN II, the robot that never phones home.</h1>
       <div>
-        <p>NAN II plays your music and movies, reads you books, looks things up in an offline Wikipedia and translates, all on board, with the AI models you choose. It works without the internet, and DAOMSYS, its operating system, never calls home to us. Next come its wheels, for the groceries and the campsite.</p>
+        <p>NAN II plays your music and movies, reads you books, looks things up in an offline Wikipedia and translates, all on board, with the AI models you choose. It works without the internet, and DAOMSYS<sup class="tm">&trade;</sup>, its operating system, never calls home to us. Next come its wheels, for the groceries and the campsite.</p>
         <a class="cta" href="#nan">What NAN II does <span aria-hidden="true">→</span></a>
       </div>
     </div>
@@ -558,6 +559,7 @@
     <span class="label">© 2026 DAOMOTAN Personal Robotics</span>
     <span class="label">Made to live with you</span>
     <p class="credit">Designed by Jody Morris Gelbart. Music and art created by Jody Morris Gelbart. All rights reserved.</p>
+    <p class="credit">NAN II character &copy; 2014 Jody Morris Gelbart. NAN II, DAOMOTAN and DAOMSYS are trademarks of DAOMOTAN Personal Robotics.</p>
   </div>
 </footer>
 
