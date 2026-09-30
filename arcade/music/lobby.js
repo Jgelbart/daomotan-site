@@ -2,9 +2,9 @@
    The Black Hole cut stretched out: the Drift's floating sine and warm pad, the
    title's music-box bells on top, at a slow 80 in the theme's own G minor. Eight
    sections instead of four, so it wanders before it repeats, and it opens on the
-   pad and the bells alone. It plays on the games' own engine (music/engine.js,
-   copied from NAN II's source by tools/sync_arcade.py), through the same filter,
-   limiter and trim as the games, so it is never louder than they are.
+   pad, the bells and the bass. It plays on the games' own engine (music/engine.js,
+   copied from NAN II's source by tools/sync_arcade.py), through the games' filter
+   and limiter, set louder than the games (below).
 
    A browser will not let a page start sound by itself: the music starts on the
    visitor's first click or key (not on a click that opens a game), and the MUSIC
@@ -12,13 +12,13 @@
 let AC = null, MASTER = null;
 
 const MUSIC = {
-  lobby: {bpm: 80, key: 0, vol: .42, echo: .5,
-    form: ['PA', 'EPA', 'MPAB', 'MHPAB', 'OPAB', 'EPAB', 'MHPABd', 'OHPA'],
+  lobby: {bpm: 80, key: 0, vol: .8, echo: .5,
+    form: ['PAB', 'EPA', 'MPAB', 'MHPAB', 'OPAB', 'EPAB', 'MHPABd', 'OHPA'],
     lead: {w: 'sine', v: .12, a: .02, r: .25, vib: .22, len: 1.9, fx: .45},
     hi: {w: 'bell', v: .06, pl: .4, ratio: 4, idx: .7, fx: .45},
     harm: {w: 'triangle', v: .045, a: .02, r: .2, len: 1.9, fx: .4},
-    pad: {w: 'sawtooth', det: 12, cut: 900, a: .8, r: 1.6, v: .026},
-    arp: {w: 'bell', v: .03, pl: .25, ratio: 4, idx: .6, pat: [0, 1, 2, 3, 2, 1], rate: 2, oct: 12},
+    pad: {w: 'sawtooth', det: 12, cut: 900, a: .8, r: 1.6, v: .034},
+    arp: {w: 'bell', v: .04, pl: .25, ratio: 4, idx: .6, pat: [0, 1, 2, 3, 2, 1], rate: 2, oct: 12},
     bass: {w: 'sine', v: .14, pat: 'r-------r-------', r: .4},
     drums: {kit: 'soft', k: 'x...............', h: '........o.......'}},
 };
@@ -35,7 +35,10 @@ const Lobby = (() => {
     const hc = AC.createBiquadFilter(); hc.type = 'lowpass'; hc.frequency.value = 7000; hc.Q.value = .5;
     const lim = AC.createDynamicsCompressor();
     lim.threshold.value = -14; lim.knee.value = 10; lim.ratio.value = 6; lim.attack.value = .004; lim.release.value = .2;
-    const mg = AC.createGain(); B9VOL.trim(mg, .5);   // the games' own output trim
+    // .8, not the games' .5: .5 kept NAN II's chest speaker clear of clipping, and a visitor's
+    // speakers have no such ceiling. The limiter still catches the peaks. (The boss, 2026-09-30:
+    // "make the music louder".)
+    const mg = AC.createGain(); B9VOL.trim(mg, .8);
     hc.connect(lim); lim.connect(mg); mg.connect(AC.destination);
     MASTER = hc;
   }

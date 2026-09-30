@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DAOMOTAN Personal Robotics</title>
-<meta name="description" content="Meet NAN II from DAOMOTAN Personal Robotics. It plays your music and movies, reads books, looks things up offline and translates, with the AI you choose running on board. Its operating system, DAOMSYS, never phones home.">
+<meta name="description" content="NAN II from DAOMOTAN Personal Robotics: the robot you were promised. A boombox, a cooler, a bookworm and a buddy on four wheels. It hangs out, it helps out, and it never phones home.">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ece6cf">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23ece6cf'/%3E%3Crect x='4' y='6' width='24' height='4' fill='%23f0b24d'/%3E%3Crect x='4' y='12' width='24' height='4' fill='%23de7c2e'/%3E%3Crect x='4' y='18' width='24' height='4' fill='%23b5431c'/%3E%3Crect x='4' y='24' width='24' height='4' fill='%23702a18'/%3E%3C/svg%3E">
@@ -151,6 +151,12 @@
   .card h4 { margin: 0 0 6px; font-size: 20px; font-stretch: 108%; font-weight: 600; line-height: 1.2; }
   .card p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.55; }
   .card.later { background: transparent; border: 1.5px dashed rgba(26, 22, 17, 0.3); }
+  .gag { margin-top: 14px !important; font-family: var(--mono); font-size: 14px !important; letter-spacing: .08em; color: var(--brown) !important; }
+  .now {
+    display: inline-block; margin-bottom: 10px; padding: 3px 10px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink); background: var(--amber); border: 1px solid var(--amber); border-radius: 999px;
+  }
   .soon {
     display: inline-block; margin-bottom: 10px; padding: 3px 10px;
     font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
@@ -294,9 +300,10 @@
   <div class="intro">
     <div class="wrap intro-grid">
       <div class="label">Model NAN II<sup class="tm">&trade;</sup> · Link offline</div>
-      <h1>Meet NAN II, the robot that never phones home.</h1>
+      <h1>The robot you were promised.</h1>
       <div>
-        <p>NAN II plays your music and movies, reads you books, looks things up in an offline Wikipedia and translates, all on board, with the AI models you choose. It works without the internet, and DAOMSYS<sup class="tm">&trade;</sup>, its operating system, never calls home to us. Next come its wheels, for the groceries and the campsite.</p>
+        <p>A boombox, a cooler, a bookworm and a buddy on four wheels. It hangs out, it helps out, and it never phones home.</p>
+        <p class="gag">Not a drone. Not a doorbell camera. Not reporting on you. Just a good robot.</p>
         <a class="cta" href="#nan">What NAN II does <span aria-hidden="true">→</span></a>
       </div>
     </div>
@@ -306,106 +313,57 @@
     <div class="wrap">
       <div class="head">
         <div class="label">What NAN II does</div>
-        <h2>Plays, knows and goes.</h2>
+        <h2>Remember the robots in the movies?</h2>
+        <p>The ones who beeped, rolled along beside the heroes and made everything more fun? Somewhere along the way, the future got drones and surveillance cameras instead. NAN II is our way of getting the good one back.</p>
       </div>
-
-      <div class="group" style="--c: var(--amber)">
-        <div class="group-head"><h3>Plays</h3></div>
-        <div class="features">
-          <div class="card" style="--c: var(--amber)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
-            <h4>Your music</h4>
-            <p>Plays the songs you own, from your own collection. No streaming account, no ads.</p>
-          </div>
-          <div class="card" style="--c: var(--amber)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M10 8.5v5l4.5-2.5z"/><path d="M8 21h8"/></svg></div>
-            <h4>Your movies</h4>
-            <p>Plays films from your own library on its screen, with sound from its own speakers.</p>
-          </div>
-          <div class="card" style="--c: var(--amber)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="8" width="13" height="9" rx="2"/><circle cx="8.5" cy="12.5" r="2.5"/><path d="M15 10.5l6-3.5v11l-6-3.5"/></svg></div>
-            <h4>Movie night on the wall</h4>
-            <p>Dim the lights and NAN II projects the movie onto a wall, or a bedsheet strung between trees.</p>
-          </div>
-          <div class="card" style="--c: var(--amber)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="2.5"/><path d="M9 8.5V14"/><rect x="3" y="14" width="18" height="6" rx="2"/><circle cx="16" cy="11" r="1.5"/></svg></div>
-            <h4>Arcade games</h4>
-            <p>Arcade games designed by NAN II's inventor. NAN II ships with a gamepad to play them. Winner picks the next movie.</p>
-          </div>
+      <div class="features">
+        <div class="card later" style="--c: var(--rust); --ic: var(--cream)">
+          <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7l5 5-5 5"/><path d="M12 7l5 5-5 5"/></svg></div>
+          <span class="soon">In the workshop</span>
+          <h4>It hangs out</h4>
+          <p>NAN II rolls along beside you like a good dog, from the porch to the yard to the campsite. It&rsquo;s happy just to be around.</p>
         </div>
-      </div>
-
-      <div class="group" style="--c: var(--orange)">
-        <div class="group-head"><h3>Knows</h3></div>
-        <div class="features">
-          <div class="card" style="--c: var(--orange)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"/></svg></div>
-            <h4>Wikipedia on board</h4>
-            <p>An offline copy of Wikipedia lives inside NAN II. Look things up anywhere, with no signal at all.</p>
-          </div>
-          <div class="card" style="--c: var(--orange)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8.5v7M8.5 12h7"/></svg></div>
-            <h4>A medical wiki</h4>
-            <p>A medical encyclopedia on board, for looking things up when you're far from a signal. It's a reference, not your doctor.</p>
-          </div>
-          <div class="card" style="--c: var(--orange)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h6a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H3z"/><path d="M21 5h-6a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h7z"/></svg></div>
-            <h4>Hundreds of books</h4>
-            <p>Hundreds of classics from Project Gutenberg that NAN II can read to you, a chapter at a time.</p>
-          </div>
-          <div class="card" style="--c: var(--orange)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h11v8H8l-3 3v-3H3z"/><path d="M17 8h4v8h-2v3l-3-3h-6v-2"/></svg></div>
-            <h4>Translator</h4>
-            <p>Listens in one language and speaks in another, so everyone at the table can talk.</p>
-          </div>
+        <div class="card" style="--c: var(--amber)">
+          <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="8" width="20" height="12" rx="2"/><circle cx="7.5" cy="14" r="3"/><circle cx="16.5" cy="14" r="3"/><path d="M6 8V5h12v3"/></svg></div>
+          <span class="now">Working now</span>
+          <h4>It&rsquo;s a boombox</h4>
+          <p>Load it with your own music and crank it on the porch. No streaming account, no ads.</p>
         </div>
-      </div>
-
-      <div class="group" style="--c: var(--rust)">
-        <div class="group-head"><h3>Goes</h3><span class="soon">In the workshop</span></div>
-        <p class="group-note">NAN II's chassis is being built. This is what its wheels are for.</p>
-        <div class="features">
-          <div class="card" style="--c: var(--rust); --ic: var(--cream)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M3.5 10.5h6M14.5 10.5h6M12 14.5V21"/></svg></div>
-            <h4>Drive it by remote</h4>
-            <p>Take the remote and drive NAN II around the house, the yard or the campsite.</p>
-          </div>
-          <div class="card" style="--c: var(--rust); --ic: var(--cream)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7l5 5-5 5"/><path d="M12 7l5 5-5 5"/></svg></div>
-            <h4>Follows you</h4>
-            <p>NAN II rolls along beside you, from the front door to the car to the campsite.</p>
-          </div>
-          <div class="card" style="--c: var(--rust); --ic: var(--cream)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1.2 12H6.2z"/><path d="M9 11V6a3 3 0 0 1 6 0v5"/></svg></div>
-            <h4>Carries your groceries</h4>
-            <p>Load it up at the car and NAN II rolls the bags into the kitchen.</p>
-          </div>
-          <div class="card" style="--c: var(--rust); --ic: var(--cream)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M12.5 7.5l-2 4h3l-2 4"/></svg></div>
-            <h4>Charges your phone</h4>
-            <p>Plug in and top up your phone from NAN II. Handy when the nearest outlet is miles away.</p>
-          </div>
-          <div class="card" style="--c: var(--rust); --ic: var(--cream)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 20h20"/><path d="M12 5L4 20M12 5l8 15"/><path d="M12 13l-3.5 7M12 13l3.5 7"/></svg></div>
-            <h4>Take it camping</h4>
-            <p>Music, movies, books and Wikipedia work just as well in the woods. No signal needed.</p>
-          </div>
-          <div class="card" style="--c: var(--rust); --ic: var(--cream)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18"/><path d="M7 18a5 5 0 0 1 10 0"/><path d="M12 7v2M5.6 10.6l1.4 1.4M18.4 10.6L17 12"/></svg></div>
-            <h4>A seat for the sunset</h4>
-            <p>Have a seat on NAN II at the end of the day and watch the sun go down together.</p>
-          </div>
-          <div class="card" style="--c: var(--rust); --ic: var(--cream)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="14" rx="2"/><path d="M9 7V2.5"/><path d="M10 11.5h4M10 14.5h4"/></svg></div>
-            <h4>Comlink</h4>
-            <p>A handheld comlink lets you talk to NAN II from across the house or across the campsite.</p>
-          </div>
-          <div class="card later" style="--c: var(--rust); --ic: var(--cream)">
-            <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-4l-3-2.5L9 16H5a2 2 0 0 1-2-2z"/></svg></div>
-            <span class="soon">Future expansion</span>
-            <h4>See through its eyes</h4>
-            <p>Put on an FPV helmet and see what NAN II sees while you drive it.</p>
-          </div>
+        <div class="card later" style="--c: var(--rust); --ic: var(--cream)">
+          <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="11" rx="2"/><path d="M3 13h18"/><path d="M9 9V6h6v3"/></svg></div>
+          <span class="soon">In the workshop</span>
+          <h4>It&rsquo;s a cooler</h4>
+          <p>Cold drinks ride along wherever NAN II goes.</p>
+        </div>
+        <div class="card later" style="--c: var(--rust); --ic: var(--cream)">
+          <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="8" width="13" height="9" rx="2"/><circle cx="8.5" cy="12.5" r="2.5"/><path d="M15 10.5l6-3.5v11l-6-3.5"/></svg></div>
+          <span class="soon">In the workshop</span>
+          <h4>It&rsquo;s movie night</h4>
+          <p>Put your own movies on it and project them onto a wall, or a bedsheet strung between two trees.</p>
+        </div>
+        <div class="card" style="--c: var(--orange)">
+          <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h6a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H3z"/><path d="M21 5h-6a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h7z"/></svg></div>
+          <span class="now">Working now</span>
+          <h4>It knows stuff</h4>
+          <p>Ask it all sorts of things. An offline Wikipedia, a medical encyclopedia and hundreds of books ride inside, no signal needed.</p>
+        </div>
+        <div class="card" style="--c: var(--amber)">
+          <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h11v8H8l-3 3v-3H3z"/><path d="M17 8h4v8h-2v3l-3-3h-6v-2"/></svg></div>
+          <span class="now">Working now</span>
+          <h4>It translates</h4>
+          <p>It listens in one language and speaks in another, so everyone at the table can talk.</p>
+        </div>
+        <div class="card later" style="--c: var(--rust); --ic: var(--cream)">
+          <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M12.5 7.5l-2 4h3l-2 4"/></svg></div>
+          <span class="soon">In the workshop</span>
+          <h4>It charges your phone</h4>
+          <p>Plug in and top up, even when the nearest outlet is miles away.</p>
+        </div>
+        <div class="card" style="--c: var(--orange)">
+          <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="2.5"/><path d="M9 8.5V14"/><rect x="3" y="14" width="18" height="6" rx="2"/><circle cx="16" cy="11" r="1.5"/></svg></div>
+          <span class="now">Working now</span>
+          <h4>It plays games</h4>
+          <p>Arcade games designed by NAN II&rsquo;s own inventor, with a gamepad in the box. Winner picks the movie.</p>
         </div>
       </div>
 
@@ -437,7 +395,7 @@
         <div class="brain">
           <div class="label">Choose its brain</div>
           <h3>NAN II is the body. You choose the brain.</h3>
-          <p>NAN II runs open AI models, the kind anyone can download, right on its own computer, and you decide which ones. DAOMSYS is the harness around them: it gives the model you pick ears, a voice, a face and a screen, and it decides what that model can reach. What the model says is up to the model and the people who made it, so choose one you trust.</p>
+          <p>NAN II runs open AI models, the kind anyone can download, right on its own computer, and you decide which ones. DAOMSYS<sup class="tm">&trade;</sup> is the harness around them: it gives the model you pick ears, a voice, a face and a screen, and it decides what that model can reach. What the model says is up to the model and the people who made it, so choose one you trust.</p>
           <ul>
             <li>Load the models you like, and change them whenever you want.</li>
             <li>Use a quick model for easy chat and a deeper thinker for harder questions.</li>
@@ -470,7 +428,7 @@
       <div class="nph">
         <div class="head">
           <div class="label">No phone home</div>
-          <h2>DAOMSYS never phones home.</h2>
+          <h2>Robots were supposed to be friends, not watchers.</h2>
           <p>&ldquo;No phone home&rdquo; means NAN II&rsquo;s operating system never calls us: no telemetry, no account to sign into, no switch we can flip from afar. It doesn&rsquo;t need the internet to work, and it answers to you.</p>
         </div>
         <figure class="photo">
