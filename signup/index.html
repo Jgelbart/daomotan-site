@@ -144,9 +144,11 @@
       if (!f.when.checked && !f.news.checked) { say('Pick at least one thing to hear about.', true); return; }
       const wants = [f.when.checked && 'Tell me when I can get a NAN II', f.news.checked && 'News from the workshop'].filter(Boolean).join('; ');
       send.disabled = true; say('Sending…');
+      // the relay gets 15 seconds; a relay that never answers must not leave the visitor waiting
+      const quit = new AbortController(), timer = setTimeout(() => quit.abort(), 15000);
       try {
         const r = await fetch(RELAY, {
-          method: 'POST',
+          method: 'POST', signal: quit.signal,
           headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
           body: JSON.stringify({
             _subject: 'DAOMOTAN list: ' + (name || email),
@@ -163,7 +165,9 @@
         document.getElementById('done').scrollIntoView({block: 'nearest'});
       } catch (err) {
         send.disabled = false;
-        say('That didn’t go through. Please try again in a minute.', true);
+        say('That didn’t go through. Please try again in a little while.', true);
+      } finally {
+        clearTimeout(timer);
       }
     });
   })();
