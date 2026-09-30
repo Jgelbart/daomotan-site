@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get on the list · DAOMOTAN</title>
+<meta name="description" content="Sign up to hear when you can get a NAN II, and for news from the DAOMOTAN workshop.">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ece6cf">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23ece6cf'/%3E%3Crect x='4' y='6' width='24' height='4' fill='%23f0b24d'/%3E%3Crect x='4' y='12' width='24' height='4' fill='%23de7c2e'/%3E%3Crect x='4' y='18' width='24' height='4' fill='%23b5431c'/%3E%3Crect x='4' y='24' width='24' height='4' fill='%23702a18'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=Michroma&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  /* the main site's look: cream, ink, the logo's four stripes */
+  :root {
+    --cream: #ece6cf; --cream-soft: #f5f0de; --ink: #1a1611; --muted: #5a5244;
+    --line: rgba(26, 22, 17, 0.14); --amber: #f0b24d; --orange: #de7c2e; --rust: #b5431c; --brown: #702a18;
+    --stripes: linear-gradient(to bottom,
+      var(--amber) 0 19.77%, transparent 19.77% 26.74%,
+      var(--orange) 26.74% 46.51%, transparent 46.51% 53.49%,
+      var(--rust) 53.49% 73.26%, transparent 73.26% 80.23%,
+      var(--brown) 80.23% 100%);
+    --body: "Archivo", system-ui, sans-serif; --wide: "Michroma", "Archivo", sans-serif;
+    --mono: "Share Tech Mono", ui-monospace, monospace; --gutter: clamp(16px, 5vw, 64px);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cream); color: var(--ink); font-family: var(--body); font-size: 18px; line-height: 1.6;
+         -webkit-font-smoothing: antialiased; min-height: 100vh; display: flex; flex-direction: column; }
+  a { color: inherit; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 var(--gutter); width: 100%; }
+  .label { font-family: var(--mono); font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--brown); }
+
+  header { border-bottom: 1px solid var(--line); }
+  .bar { max-width: 1180px; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 68px; }
+  .wordmark { text-decoration: none; font-family: var(--wide); font-size: 20px; letter-spacing: 0.04em; }
+  .back { text-decoration: none; font-family: var(--mono); font-size: 14px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+  .back:hover { color: var(--ink); }
+
+  main { flex: 1; padding: clamp(40px, 8vw, 88px) 0 clamp(56px, 8vw, 96px); }
+  h1 { margin: 16px 0 0; font-size: clamp(32px, 5vw, 52px); font-stretch: 110%; font-weight: 560; line-height: 1.06; letter-spacing: -0.02em; text-wrap: balance; }
+  .lede { margin: 18px 0 0; color: var(--muted); font-size: 19px; }
+
+  form { margin-top: 36px; display: grid; gap: 22px; }
+  .field { display: grid; gap: 8px; }
+  .field > span { font-family: var(--mono); font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+  .field > span em { font-style: normal; letter-spacing: 0.1em; opacity: .8; }
+  input[type=text], input[type=email], textarea {
+    font: inherit; font-size: 18px; color: var(--ink); background: var(--cream-soft);
+    border: 1px solid rgba(26, 22, 17, 0.25); border-radius: 12px; padding: 14px 16px; width: 100%; }
+  textarea { min-height: 110px; resize: vertical; }
+  input:focus, textarea:focus { outline: none; border-color: var(--rust); box-shadow: 0 0 0 3px rgba(181, 67, 28, .18); }
+  fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 12px; }
+  legend { font-family: var(--mono); font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .check { display: flex; gap: 14px; align-items: center; background: var(--cream-soft); border: 1px solid var(--line);
+           border-radius: 12px; padding: 14px 16px; cursor: pointer; }
+  .check input { width: 22px; height: 22px; accent-color: var(--rust); flex: none; }
+  .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }   /* for robots only */
+  .send { justify-self: start; font-family: var(--mono); font-size: 16px; letter-spacing: 0.14em; text-transform: uppercase;
+          color: var(--cream); background: var(--ink); border: 0; border-radius: 999px; padding: 16px 32px; cursor: pointer; }
+  .send:hover { background: var(--rust); }
+  .send[disabled] { opacity: .6; cursor: default; }
+  .fine { margin: 0; font-size: 14px; color: var(--muted); max-width: 40em; }
+  .status { margin: 0; font-size: 16px; min-height: 1.6em; }
+  .status.bad { color: var(--rust); }
+
+  .done { margin-top: 36px; padding: clamp(24px, 4vw, 40px); background: var(--cream-soft); border: 1px solid var(--line); border-radius: 20px; }
+  .done h2 { margin: 0 0 10px; font-size: clamp(26px, 3.4vw, 36px); font-stretch: 110%; font-weight: 560; line-height: 1.1; }
+  .done p { margin: 0; color: var(--muted); }
+  .home { display: inline-block; margin-top: 24px; font-family: var(--mono); font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase;
+          text-decoration: none; color: var(--cream); background: var(--ink); border-radius: 999px; padding: 14px 26px; }
+  .home:hover { background: var(--rust); }
+
+  .band { height: clamp(36px, 5vw, 64px); background: var(--stripes); }
+  footer { padding: 22px 0 32px; }
+  footer .wrap { max-width: 1180px; font-family: var(--mono); font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap bar">
+    <a class="wordmark" href="../">DAOMOTAN</a>
+    <a class="back" href="../">&larr; Back to the main page</a>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="label">Get on the list</div>
+    <h1>Hey! Let me know when I can get one of these things!</h1>
+    <p class="lede">Leave your email and we&rsquo;ll tell you when NAN II is ready, with the odd bit of news from the workshop along the way.</p>
+
+    <form id="list" novalidate>
+      <label class="field"><span>Your name <em>(optional)</em></span>
+        <input type="text" name="name" autocomplete="name" maxlength="120"></label>
+      <label class="field"><span>Your email</span>
+        <input type="email" name="email" autocomplete="email" required maxlength="200"></label>
+      <fieldset>
+        <legend>What should we send you?</legend>
+        <label class="check"><input type="checkbox" name="when" checked> Tell me when I can get a NAN II</label>
+        <label class="check"><input type="checkbox" name="news" checked> Send me news from the workshop</label>
+      </fieldset>
+      <label class="field"><span>Anything else? <em>(optional)</em></span>
+        <textarea name="message" maxlength="2000"></textarea></label>
+      <label class="hp" aria-hidden="true">Leave this empty <input type="text" name="company" tabindex="-1" autocomplete="off"></label>
+      <button class="send" type="submit">Sign me up</button>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+      <p class="fine">We&rsquo;ll only use this to email you about DAOMOTAN and NAN II, and we never sell or share it. It reaches us by email through FormSubmit, a form relay. Want off the list? Reply to any email and say so.</p>
+    </form>
+
+    <div class="done" id="done" hidden>
+      <h2 id="doneTitle">You&rsquo;re on the list!</h2>
+      <p>We&rsquo;ll be in touch when there&rsquo;s something to tell. Thanks for wanting a good robot.</p>
+      <a class="home" href="../">Back to the main page &rarr;</a>
+    </div>
+  </div>
+</main>
+
+<div class="band" aria-hidden="true"></div>
+<footer>
+  <div class="wrap">&copy; 2026 DAOMOTAN Personal Robotics</div>
+</footer>
+
+<script>
+  // THE LIST. A GitHub Pages site cannot send mail itself, so FormSubmit relays each sign-up to
+  // DAOMOTAN's inbox. The address is kept out of the page (base64 below is only to keep it out of
+  // plain sight). FormSubmit asks the inbox to click "Activate" once, after the first sign-up; until
+  // then sign-ups are not delivered. Once activated, FormSubmit offers a private alias that can
+  // replace the address here entirely.
+  (function(){
+    'use strict';
+    const RELAY = 'https://formsubmit.co/ajax/' + atob('c2xlZW5hcmRAZ21haWwuY29t');
+    const form = document.getElementById('list'), status = document.getElementById('status');
+    const send = form.querySelector('.send');
+    const say = (text, bad) => { status.textContent = text; status.classList.toggle('bad', !!bad); };
+
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = form.elements;
+      if (f.company.value) return;                                  // a robot filled the hidden box
+      const email = f.email.value.trim(), name = f.name.value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { say('That email doesn’t look right. Check it and try again.', true); f.email.focus(); return; }
+      if (!f.when.checked && !f.news.checked) { say('Pick at least one thing to hear about.', true); return; }
+      const wants = [f.when.checked && 'Tell me when I can get a NAN II', f.news.checked && 'News from the workshop'].filter(Boolean).join('; ');
+      send.disabled = true; say('Sending…');
+      try {
+        const r = await fetch(RELAY, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+          body: JSON.stringify({
+            _subject: 'DAOMOTAN list: ' + (name || email),
+            _template: 'table',
+            _captcha: 'false',
+            name: name || '(not given)', email, wants, message: f.message.value.trim() || '(none)',
+          }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || String(j.success) !== 'true') throw new Error(j.message || ('HTTP ' + r.status));
+        form.hidden = true;
+        document.getElementById('doneTitle').textContent = name ? `You’re on the list, ${name}!` : 'You’re on the list!';
+        document.getElementById('done').hidden = false;
+        document.getElementById('done').scrollIntoView({block: 'nearest'});
+      } catch (err) {
+        send.disabled = false;
+        say('That didn’t go through. Please try again in a minute.', true);
+      }
+    });
+  })();
+</script>
+</body>
+</html>

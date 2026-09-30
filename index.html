@@ -118,6 +118,10 @@
     text-decoration: none; border-radius: 999px;
   }
   .cta:hover { background: var(--rust); }
+  .ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+  .ctas .cta { margin-top: 0; }
+  .cta.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
+  .cta.ghost:hover { background: var(--ink); color: var(--cream); }
 
   /* Sections */
   section.block { padding: clamp(72px, 10vw, 120px) 0; }
@@ -304,7 +308,7 @@
       <div>
         <p>A boombox, a cooler, a bookworm and a buddy on four wheels. It hangs out, it helps out, and it never phones home.</p>
         <p class="gag">Not a drone. Not a doorbell camera. Not reporting on you. Just a good robot.</p>
-        <a class="cta" href="#nan">What NAN II does <span aria-hidden="true">→</span></a>
+        <div class="ctas"><a class="cta" href="#nan">What NAN II does <span aria-hidden="true">→</span></a><a class="cta ghost" href="signup/">Get on the list</a></div>
       </div>
     </div>
   </div>
@@ -507,6 +511,7 @@
       <div class="label">About DAOMOTAN</div>
       <h2>Your music.<br>Your movies.<br>Your data.<br><em>No phone home.</em></h2>
       <p>DAOMOTAN Personal Robotics makes Model NAN II, a personal robot that plays, reads and translates, runs the AI you choose, and whose operating system never reports back to us.</p>
+      <a class="cta" href="signup/">Get on the list <span aria-hidden="true">&rarr;</span></a>
     </div>
   </section>
   <div class="band" aria-hidden="true"></div>
