@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script>window.DAOMOTAN_ARCADE = true;</script>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NAN II Through The Black Hole</title>
+<style>
+:root{--bg:#000;--ink:#fff2c7;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#000;--ink:#fff2c7;}}
+:root[data-theme="dark"]{--bg:#000;--ink:#fff2c7;}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px);}
+body{height:100%;margin:0;background:var(--bg);color:var(--ink);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+canvas{display:block;outline:none;}
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0" aria-label="NAN II Through The Black Hole, a side-scrolling arcade game. Press Enter or Start to play."></canvas>
+<script>
+/* ======================= NAN II THROUGH THE BLACK HOLE =======================
+   Three genres, joined by black holes:
+     JUNKYARD  - drive, jump, boost and stomp (platformer)
+     DRIFT     - rotate, thrust and shoot the drifting junk (asteroids)
+     GAUNTLET  - flutter through the gaps (flappy)
+   Enemy: the Smart Appliances. */
+const W=960,H=540,HUD=40,TAU=Math.PI*2;
+const cv=document.getElementById('c'),out=cv.getContext('2d');
+const buf=document.createElement('canvas');buf.width=480;buf.height=270;const ctx=buf.getContext('2d');ctx.setTransform(.5,0,0,.5,0,0);
+const glow=document.createElement('canvas');glow.width=160;glow.height=90;const gctx=glow.getContext('2d');
+function fit(){const bw=document.body.clientWidth,bh=document.body.clientHeight,S=Math.min(bw/W,bh/H),d=window.devicePixelRatio||1;
+  cv.style.width=W*S+'px';cv.style.height=H*S+'px';cv.width=Math.round(W*S*d);cv.height=Math.round(H*S*d);out.setTransform(S*d,0,0,S*d,0,0);}
+addEventListener('resize',fit);fit();
+const FT='monospace',FB=FT;
+const rnd=(a,b)=>a+Math.random()*(b-a),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+let T=0,G=null;
+/* ================= NAN II FACE SETTINGS HANDLES =================
+   Every look-and-feel dial lives in FXS. NAN II's settings can drive it three ways:
+   1. URL:          colony-guard.html?hue=amber&bloom=40&scanlines=1&afterglow=30
+   2. postMessage:  iframe.contentWindow.postMessage({type:'b9-settings',settings:{hue:'cyan',bloom:60}},'*')
+   3. JavaScript:   window.B9FX.set({flicker:0}) and window.B9FX.get()
+   Changes are remembered on this device. */
+const HUES={amber:'#ffb24a',orange:'#ff7a1f',bone:'#f2ecdd',green:'#39ff88',cyan:'#3fd8ff',red:'#ff4a4a'};
+const HUE_NAMES=Object.keys(HUES);
+const ALARM={red:'#ff3030',cyan:'#30e0ff'};
+const FXS={hue:'green',bloom:40,scanlines:true,vignette:true,afterglow:30,flicker:10,breathing:false,alarmBleed:true};
+const toBool=v=>v===true||v===1||v==='1'||v==='true'||v==='on';
+function applyFX(o,persist=true){if(!o||typeof o!=='object')return;
+  for(const k of Object.keys(FXS))if(k in o){const v=o[k];
+    if(k==='hue'){const n=String(v).toLowerCase();if(HUES[n])FXS.hue=n;else if(/^#?[0-9a-f]{6}$/i.test(n)){FXS.hue='custom';HUES.custom=n[0]==='#'?n:'#'+n;}}
+    else if(typeof FXS[k]==='boolean')FXS[k]=toBool(v);
+    else{const x=+v;if(isFinite(x))FXS[k]=Math.max(0,Math.min(100,x));}}
+  if(persist)try{localStorage.setItem('b9fx',JSON.stringify(FXS));}catch(e){}
+  refreshHue();}
+const hexRGB=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+let RGB=[57,255,136];
+const C={};const A=a=>`rgba(${RGB.join(',')},${a})`;
+var PWHEX=null;  /* colour override while a bird power is active */
+function refreshHue(hex){RGB=hexRGB(hex||PWHEX||HUES[FXS.hue]||HUES.green);
+  Object.assign(C,{ink:A(1),ship:A(1),lander:A(1),mutant:A(1),ground:A(1),rim:A(1),dim:A(.5),faint:A(.22),beam:A(.14)});}
+let phos=0;
+function setPhos(i){phos=((i%HUE_NAMES.length)+HUE_NAMES.length)%HUE_NAMES.length;applyFX({hue:HUE_NAMES[phos]});}
+try{applyFX(JSON.parse(localStorage.getItem('b9fx')||'{}'),false);}catch(e){}
+{const q={};new URLSearchParams(location.search).forEach((v,k)=>q[k]=v);applyFX(q,false);}
+refreshHue();phos=Math.max(0,HUE_NAMES.indexOf(FXS.hue));
+addEventListener('message',e=>{const d=e.data;if(d&&d.type==='b9-settings')applyFX(d.settings);});
+window.B9FX={get:()=>({...FXS}),set:o=>applyFX(o),hues:HUE_NAMES};
+let AC=null,noiseBuf=null,MASTER=null,T0=0,ENG=null,FX=null,whiteBuf=null;
+function audio(){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();{const hc=AC.createBiquadFilter();hc.type='lowpass';hc.frequency.value=7000;hc.Q.value=.5;const lim=AC.createDynamicsCompressor();lim.threshold.value=-14;lim.knee.value=10;lim.ratio.value=6;lim.attack.value=.004;lim.release.value=.2;const mg=AC.createGain();B9VOL.trim(mg,.5);/* .5 at VOLUME 10: .9 clipped NAN II's speaker bar (see gameplay.py) */hc.connect(lim);lim.connect(mg);mg.connect(AC.destination);MASTER=hc;}T0=AC.currentTime;setupEngine();}catch(e){}}if(AC&&AC.state==='suspended')AC.resume();}
+function noise(){if(!noiseBuf){noiseBuf=AC.createBuffer(1,AC.sampleRate,AC.sampleRate);const d=noiseBuf.getChannelData(0);let h=0;for(let i=0;i<d.length;i++){if(i%6===0)h=Math.random()*2-1;d[i]=h;}}return noiseBuf;}
+function brown(){const len=AC.sampleRate*2,b=AC.createBuffer(1,len,AC.sampleRate),d=b.getChannelData(0);let x=0;
+  for(let i=0;i<len;i++){x=(x+.02*(Math.random()*2-1))/1.02;d[i]=x*3.5;}return b;}
+function setupEngine(){const t=AC.currentTime,m=AC.createChannelMerger(2),bus=AC.createGain();bus.gain.value=0;m.connect(bus);bus.connect(MASTER);
+  const mk=(f,ch,type='sine')=>{const o=AC.createOscillator();o.type=type;o.frequency.value=f;const g=AC.createGain();o.connect(g);g.connect(m,0,ch);o.start(t);return {o,g};};
+  const L=mk(110,0),R=mk(116,1),L5=mk(165,0),R5=mk(171,1),sub=mk(55,0,'triangle'),subR=mk(55,1,'triangle');
+  L.g.gain.value=R.g.gain.value=.5;sub.g.gain.value=subR.g.gain.value=.18;L5.g.gain.value=R5.g.gain.value=0;
+  const n=AC.createBufferSource();n.buffer=brown();n.loop=true;const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=300;lp.Q.value=.7;
+  const ng=AC.createGain();ng.gain.value=0;n.connect(lp);lp.connect(ng);ng.connect(m,0,0);ng.connect(m,0,1);n.start(t);
+  ENG={bus,L,R,L5,R5,lp,ng};}
+function engine(on,thrust,lift,speed){if(!ENG)return;const t=AC.currentTime,k=on?1:0,s=Math.min(1,speed/560),bt=6;
+  ENG.bus.gain.setTargetAtTime(k*(.05+.05*thrust+.02*lift),t,.25);
+  const f=110*(1+.06*s);ENG.L.o.frequency.setTargetAtTime(f,t,.3);ENG.R.o.frequency.setTargetAtTime(f+bt,t,.3);
+  ENG.L5.o.frequency.setTargetAtTime(f*1.5,t,.3);ENG.R5.o.frequency.setTargetAtTime(f*1.5+bt,t,.3);
+  ENG.L5.g.gain.setTargetAtTime(.32*thrust,t,.2);ENG.R5.g.gain.setTargetAtTime(.32*thrust,t,.2);
+  ENG.lp.frequency.setTargetAtTime(250+900*s+500*lift,t,.2);ENG.ng.gain.setTargetAtTime(.25*thrust+.2*lift,t,.2);}
+function tone(f1,f2,dur,type='square',vol=.05){if(!AC)return;const t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();o.type=type;
+  o.frequency.setValueAtTime(f1,t);o.frequency.exponentialRampToValueAtTime(Math.max(20,f2),t+dur);g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g);g.connect(MASTER);o.start(t);o.stop(t+dur+.02);}
+function boom(dur=.4,vol=.2){if(!AC)return;noise();
+  const t=AC.currentTime,s=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();f.type='lowpass';f.frequency.setValueAtTime(1800,t);f.frequency.exponentialRampToValueAtTime(100,t+dur);
+  s.buffer=noiseBuf;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(MASTER);s.start(t);s.stop(t+dur);}
+function fxBus(){if(FX)return FX;const inp=AC.createGain();
+  const dly=AC.createDelay(1);dly.delayTime.value=.24;const fb=AC.createGain();fb.gain.value=.3;const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1400;
+  inp.connect(dly);dly.connect(lp);lp.connect(fb);fb.connect(dly);const wet=AC.createGain();wet.gain.value=.35;lp.connect(wet);wet.connect(MASTER);
+  const len=Math.floor(AC.sampleRate*2.2),ir=AC.createBuffer(2,len,AC.sampleRate);
+  for(let ch=0;ch<2;ch++){const d=ir.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3);}
+  const cv=AC.createConvolver();cv.buffer=ir;const rv=AC.createGain();rv.gain.value=.3;inp.connect(cv);cv.connect(rv);rv.connect(MASTER);
+  return FX=inp;}
+function white(){if(!whiteBuf){const n=AC.sampleRate,b=AC.createBuffer(1,n,AC.sampleRate),d=b.getChannelData(0);for(let i=0;i<n;i++)d[i]=Math.random()*2-1;whiteBuf=b;}return whiteBuf;}
+function panNode(pan){if(!AC.createStereoPanner)return AC.createGain();const p=AC.createStereoPanner();p.pan.value=Math.max(-.85,Math.min(.85,pan||0));return p;}
+function noiseHit(when,pan,vol,dur,f0,f1){const t=AC.currentTime+when,s=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain(),pn=panNode(pan);
+  s.buffer=white();s.playbackRate.value=rnd(.8,1.2);f.type='lowpass';f.Q.value=1;f.frequency.setValueAtTime(f0,t);f.frequency.exponentialRampToValueAtTime(f1,t+dur);
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(pn);pn.connect(MASTER);s.start(t,rnd(0,.5));s.stop(t+dur+.02);}
+function thump(when,pan,vol,f0,f1,dur){const t=AC.currentTime+when,o=AC.createOscillator(),g=AC.createGain(),pn=panNode(pan);o.type='sine';
+  o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f1,t+dur*.7);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.004);
+  g.gain.exponentialRampToValueAtTime(.0001,t+dur);o.connect(g);g.connect(pn);pn.connect(MASTER);o.start(t);o.stop(t+dur+.02);}
+function chirp(when,pan,vol,f0,f1,dur,type='square'){const t=AC.currentTime+when,o=AC.createOscillator(),lp=AC.createBiquadFilter(),g=AC.createGain(),pn=panNode(pan);
+  o.type=type;o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f1,t+dur);lp.type='lowpass';lp.frequency.value=3200;
+  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.003);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(lp);lp.connect(g);g.connect(pn);pn.connect(MASTER);o.start(t);o.stop(t+dur+.02);}
+function pluck(f,when=0,pan=0,vol=.07,dur=.5,type='triangle'){const t=AC.currentTime+when,o=AC.createOscillator(),o2=AC.createOscillator(),g=AC.createGain(),pn=panNode(pan);
+  o.type='sine';o2.type=type;o.frequency.value=f;o2.frequency.value=f*2;const g2=AC.createGain();g2.gain.value=.25;
+  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.006);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g);o2.connect(g2);g2.connect(g);g.connect(pn);pn.connect(MASTER);const sd=AC.createGain();sd.gain.value=.5;pn.connect(sd);sd.connect(fxBus());
+  o.start(t);o2.start(t);o.stop(t+dur+.05);o2.stop(t+dur+.05);}
+function levelBuf(b,target){const d=b.getChannelData(0),sr=b.sampleRate,n=Math.min(d.length,Math.floor(sr*.15));let m=0;for(let i=0;i<n;i++)m+=d[i];m/=n;
+  let e=0;for(let i=0;i<n;i++){const x=d[i]-m;e+=x*x;}const r=Math.sqrt(e/n)||1,k=target/r;for(let i=0;i<d.length;i++)d[i]=(d[i]-m)*k;return b;}
+let DEFBUF=null,DEFSRC=null;
+function defenderBuf(){const sr=44100,len=.85,N=Math.floor(sr*len),b=AC.createBuffer(1,N,sr),d=b.getChannelData(0);
+  let HI=0x5A,LO=0xC3,i=0,acc=0;
+  for(let X=1;X<=255&&i<N;X++){const amp=256-X,hold=(50+8*X)/894886*sr;
+    for(let c=0;c<32&&i<N;c++){let a=LO>>3;a^=LO;const cin=a&1;const hiOut=HI&1;HI=(HI>>1)|(cin<<7);const bit=LO&1;LO=(LO>>1)|(hiOut<<7);
+      const v=bit?amp:0;acc+=hold;while(acc>=1&&i<N){d[i++]=v/255*.5;acc-=1;}}}
+  const fade=Math.floor(sr*.35);for(let k=0;k<fade;k++){const j=N-fade+k;d[j]*=1-k/fade;}
+  return b;}
+
+function defenderZap(pan){if(!DEFBUF)DEFBUF=levelBuf(defenderBuf(),.016);if(DEFSRC){try{DEFSRC.stop();}catch(e){}}
+  const s=AC.createBufferSource(),hp=AC.createBiquadFilter(),g=AC.createGain(),pn=panNode(pan);s.buffer=DEFBUF;
+  hp.type='highpass';hp.frequency.value=60;g.gain.value=1;s.connect(hp);hp.connect(g);g.connect(pn);pn.connect(MASTER);s.start();DEFSRC=s;}
+const GLYPHS=(()=>{const O=[[1,0],[4,0],[5,1],[5,6],[4,7],[1,7],[0,6],[0,1],[1,0]];
+const g={
+A:[[[0,7],[0,1],[1,0],[4,0],[5,1],[5,7]],[[0,4],[5,4]]],
+B:[[[0,0],[4,0],[5,1],[5,2.5],[4,3.5],[0,3.5]],[[4,3.5],[5,4.5],[5,6],[4,7],[0,7],[0,0]]],
+C:[[[5,0],[1,0],[0,1],[0,6],[1,7],[5,7]]],
+D:[[[0,0],[4,0],[5,1],[5,6],[4,7],[0,7],[0,0]]],
+E:[[[5,0],[0,0],[0,7],[5,7]],[[0,3.5],[4,3.5]]],
+F:[[[5,0],[0,0],[0,7]],[[0,3.5],[4,3.5]]],
+G:[[[5,0],[1,0],[0,1],[0,6],[1,7],[4,7],[5,6],[5,4],[3,4]]],
+H:[[[0,0],[0,7]],[[5,0],[5,7]],[[0,3.5],[5,3.5]]],
+I:[[[1,0],[4,0]],[[2.5,0],[2.5,7]],[[1,7],[4,7]]],
+J:[[[1,0],[5,0]],[[4,0],[4,6],[3,7],[1,7],[0,6]]],
+K:[[[0,0],[0,7]],[[5,0],[1.5,3.5],[0,3.5]],[[1.5,3.5],[5,7]]],
+L:[[[0,0],[0,7],[5,7]]],
+M:[[[0,7],[0,0],[2.5,3],[5,0],[5,7]]],
+N:[[[0,7],[0,0],[5,7],[5,0]]],
+O:[O],
+P:[[[0,7],[0,0],[4,0],[5,1],[5,3],[4,4],[0,4]]],
+Q:[O,[[3,5],[5,7.6]]],
+R:[[[0,7],[0,0],[4,0],[5,1],[5,3],[4,4],[0,4]],[[2.5,4],[5,7]]],
+S:[[[5,0],[1,0],[0,1],[0,2.5],[1,3.5],[4,3.5],[5,4.5],[5,6],[4,7],[0,7]]],
+T:[[[0,0],[5,0]],[[2.5,0],[2.5,7]]],
+U:[[[0,0],[0,6],[1,7],[4,7],[5,6],[5,0]]],
+V:[[[0,0],[0,4],[2.5,7],[5,4],[5,0]]],
+W:[[[0,0],[0,7],[2.5,4],[5,7],[5,0]]],
+X:[[[0,0],[5,7]],[[5,0],[0,7]]],
+Y:[[[0,0],[2.5,3.5],[5,0]],[[2.5,3.5],[2.5,7]]],
+Z:[[[0,0],[5,0],[0,7],[5,7]]],
+0:[O,[[4,1.5],[1,5.5]]],
+1:[[[1,1.5],[2.5,0],[2.5,7]],[[1,7],[4,7]]],
+2:[[[0,1],[1,0],[4,0],[5,1],[5,2.5],[4,3.5],[1,3.5],[0,4.5],[0,7],[5,7]]],
+3:[[[0,0],[4,0],[5,1],[5,2.5],[4,3.5],[1.5,3.5]],[[4,3.5],[5,4.5],[5,6],[4,7],[0,7]]],
+4:[[[4,7],[4,0],[0,4.5],[5,4.5]]],
+5:[[[5,0],[0,0],[0,3.5],[4,3.5],[5,4.5],[5,6],[4,7],[0,7]]],
+6:[[[5,0],[1,0],[0,1],[0,6],[1,7],[4,7],[5,6],[5,4.5],[4,3.5],[0,3.5]]],
+7:[[[0,0],[5,0],[5,1.5],[2,7]]],
+8:[[[1,0],[4,0],[5,1],[5,2.5],[4,3.5],[1,3.5],[0,2.5],[0,1],[1,0]],[[1,3.5],[0,4.5],[0,6],[1,7],[4,7],[5,6],[5,4.5],[4,3.5]]],
+9:[[[5,3.5],[1,3.5],[0,2.5],[0,1],[1,0],[4,0],[5,1],[5,6],[4,7],[0,7]]],
+'.':[[[2.5,7],[2.5,7]]],
+',':[[[2.5,6.5],[1.8,8]]],
+'!':[[[2.5,0],[2.5,4.5]],[[2.5,7],[2.5,7]]],
+'?':[[[0,1],[1,0],[4,0],[5,1],[5,2.5],[4,3.5],[2.5,3.5],[2.5,4.6]],[[2.5,7],[2.5,7]]],
+':':[[[2.5,2],[2.5,2]],[[2.5,6],[2.5,6]]],
+"'":[[[2.5,0],[2.5,1.6]]],
+'-':[[[1,3.5],[4,3.5]]],
+'+':[[[0.5,3.5],[4.5,3.5]],[[2.5,1.5],[2.5,5.5]]],
+'>':[[[1,1],[4,3.5],[1,6]]],
+'<':[[[4,1],[1,3.5],[4,6]]],
+'/':[[[5,0],[0,7]]],
+'(':[[[3.5,0],[2,1.5],[2,5.5],[3.5,7]]],
+')':[[[1.5,0],[3,1.5],[3,5.5],[1.5,7]]],
+'=':[[[0.5,2.5],[4.5,2.5]],[[0.5,4.5],[4.5,4.5]]],
+'~':[[[0,4],[1,3],[2,3],[3,4],[4,4],[5,3]]]
+};return g;})();
+const GLYPH_ADV=8,GLYPH_XS=1.2;
+/* draws with the current fillStyle, font size and textAlign, so every old fillText call keeps working */
+
+function txt(str,x,y){str=String(str).toUpperCase();const size=parseFloat(ctx.font)||16,u=size/8.5,n=str.length,w=(n*GLYPH_ADV-(GLYPH_ADV-5*GLYPH_XS))*u;
+  let x0=ctx.textAlign==='center'?x-w/2:ctx.textAlign==='right'?x-w:x;const top=y-7*u;
+  ctx.save();ctx.strokeStyle=ctx.fillStyle;ctx.lineWidth=u*1.4;ctx.lineCap='square';ctx.lineJoin='round';
+  for(let i=0;i<n;i++){const ch=str[i],gx=x0+i*GLYPH_ADV*u;
+    if(ch==='#'){ctx.fillRect(gx,top+u,5*GLYPH_XS*u,5*u);continue;}
+    const g=GLYPHS[ch];if(!g)continue;ctx.beginPath();
+    for(const st of g){st.forEach(([a,b],k)=>{const px=gx+a*GLYPH_XS*u,py=top+b*u;k?ctx.lineTo(px,py):ctx.moveTo(px,py);});}
+    ctx.stroke();}
+  ctx.restore();}
+function drawShip(x,y,dir,thrust,scale=1,lift=0){ctx.save();ctx.translate(x,y);ctx.scale(dir*scale*1.25,scale*1.25);
+  ctx.lineJoin='round';ctx.lineCap='round';
+  /* back jet: teardrop flame with inner cone */
+  const L=thrust?22+rnd(0,8):0;
+  if(L){ctx.beginPath();ctx.moveTo(-15,-8.5);ctx.quadraticCurveTo(-18,-5,-15,-1.5);ctx.quadraticCurveTo(-15-L*.45,-2,-15-L,-7);ctx.quadraticCurveTo(-15-L*.5,-9.5,-15,-8.5);
+  ctx.fillStyle=C.faint;ctx.fill();ctx.strokeStyle=C.ship;ctx.lineWidth=1.3;ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-15.5,-7.5);ctx.lineTo(-15-L*.45,-6.2);ctx.lineTo(-15.5,-3);ctx.stroke();}
+  /* foot jets from the bottom nubs */
+  const F=lift>0?9+rnd(0,5):0;
+  if(F)for(const fx of [6.5,-6]){ctx.beginPath();ctx.moveTo(fx-2.2,11.5);ctx.lineTo(fx,11.5+F);ctx.lineTo(fx+2.2,11.5);ctx.closePath();ctx.fillStyle=C.faint;ctx.fill();ctx.stroke();}
+  /* body: hooked collar, open notch holding the bubble, round front lobe, flat base */
+  ctx.fillStyle=C.ship;ctx.beginPath();
+  ctx.moveTo(7,-14);ctx.quadraticCurveTo(2,-17,-3,-15);ctx.quadraticCurveTo(-9,-14,-12,-9);
+  ctx.lineTo(-12,9);ctx.lineTo(11,10);
+  ctx.quadraticCurveTo(14,8.5,13,5);ctx.quadraticCurveTo(12,0.5,8.3,0.2);ctx.lineTo(2,-0.5);
+  ctx.quadraticCurveTo(-3,-1.5,-4,-6.5);ctx.quadraticCurveTo(-3,-12.5,2.5,-12.3);ctx.lineTo(6.3,-12);ctx.closePath();ctx.fill();
+  /* jetpack on the back */
+  ctx.fillRect(-15,-10,3.6,12);
+  ctx.save();ctx.globalCompositeOperation='destination-out';ctx.fillRect(-11.9,-10,.9,12);ctx.restore();
+  /* bottom nubs */
+  ctx.fillRect(3.7,9.5,6,2);ctx.fillRect(-8.3,9.5,4.6,2);
+  /* the bubble with its bar */
+  ctx.strokeStyle=C.ship;ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(3.9,-6.3,3.6,0,TAU);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(3.9,-9.6);ctx.lineTo(3.9,-3);ctx.stroke();
+  ctx.restore();}
+const pers=document.createElement('canvas');pers.width=480;pers.height=270;const pctx=pers.getContext('2d');
+const tint=[0,1].map(()=>{const c=document.createElement('canvas');c.width=480;c.height=270;return c;});
+
+function blit(){
+  /* 4. afterglow: old light fades over a few frames; new light is instant */
+  const keep=FXS.afterglow/100*.85;pctx.globalCompositeOperation='destination-out';pctx.fillStyle=`rgba(0,0,0,${1-keep})`;pctx.fillRect(0,0,480,270);
+  pctx.globalCompositeOperation='source-over';pctx.drawImage(buf,0,0);
+  /* 6. breathing: none in a game -- the boss wants the screen steady while he plays (2026-09-23) */
+  const br=1,gb=1;
+  gctx.clearRect(0,0,160,90);gctx.imageSmoothingEnabled=true;gctx.drawImage(pers,0,0,160,90);
+  out.globalCompositeOperation='source-over';out.globalAlpha=1;out.fillStyle='#000';out.fillRect(0,0,W,H);
+  const sk=G&&G.shake>0?G.shake:0,ox=rnd(-sk,sk),oy=rnd(-sk,sk);
+  out.imageSmoothingEnabled=false;out.globalAlpha=br;out.drawImage(pers,ox,oy,W,H);
+  /* 1. bloom: blurred copy at 35-90% opacity */
+  if(FXS.bloom>0){out.imageSmoothingEnabled=true;out.globalCompositeOperation='lighter';out.globalAlpha=(.35+.55*FXS.bloom/100)*gb;out.drawImage(glow,ox,oy,W,H);}
+  /* 8. alarm bleed: red copy 4 px left, cyan copy 4 px right, additive at 32% */
+  if(FXS.alarmBleed&&G&&G.alarmT>0){[ALARM.red,ALARM.cyan].forEach((col,i)=>{const t=tint[i].getContext('2d');t.globalCompositeOperation='source-over';t.clearRect(0,0,480,270);
+      t.drawImage(pers,0,0);t.globalCompositeOperation='source-in';t.fillStyle=col;t.fillRect(0,0,480,270);
+      out.imageSmoothingEnabled=false;out.globalCompositeOperation='lighter';out.globalAlpha=.32*Math.min(1,G.alarmT*2);out.drawImage(tint[i],i?8:-8,0,W,H);});}
+  out.globalCompositeOperation='source-over';out.globalAlpha=1;
+  /* 2. scanlines: 1 px black every 3 px at 28% */
+  if(FXS.scanlines){out.fillStyle='rgba(0,0,0,.28)';for(let y=2;y<H;y+=3)out.fillRect(0,y,W,1);}
+  /* 3. vignette: clear centre to 62% black corners */
+  if(FXS.vignette){const v=out.createRadialGradient(W/2,H/2,H*.35,W/2,H/2,Math.hypot(W,H)/2);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.62)');out.fillStyle=v;out.fillRect(0,0,W,H);}}
+
+const ALARM_FALLBACK=1;
+let HIGH=0;try{HIGH=+localStorage.getItem('b9bhHigh')||0;}catch(e){}
+const PENTA=[0,3,5,7,10,12,15,17,19,22,24];
+const nHz=i=>220*Math.pow(2,PENTA[clamp(i,0,PENTA.length-1)]/12);
+
+/* THE NAN II THEME, BLACK HOLE CUT. Title: a slow music box at 84. Each black hole has its
+   own version, in A minor with the game's notes: the Junkyard clanks and stomps at 108,
+   the Drift floats on the boss's sine at 90 with no drums to speak of, the Gauntlet
+   drives at 138. Falling through a hole muffles it until the new zone starts. */
+const MUSIC={
+  title:{bpm:84,key:0,vol:.38,echo:.45,form:['MP','MPB','OHPB','EAPB'],
+    lead:{w:'bell',v:.1,pl:.45,ratio:4,idx:.9,fx:.4},hi:{w:'bell',v:.06,pl:.4,ratio:4,idx:.7,fx:.45},harm:{w:'bell',v:.05,pl:.4,ratio:4,idx:.7,fx:.4},
+    pad:{w:'sine',det:7,a:.9,r:1.5,v:.04},
+    arp:{w:'bell',v:.03,pl:.25,ratio:4,idx:.6,pat:[0,1,2,3,2,1],rate:2,oct:12},
+    bass:{w:'sine',v:.15,pat:'r-------r-------',r:.4}},
+  junk:{bpm:108,key:2,vol:.78,echo:.25,form:['MBD','MHBD','EABD','OABDF'],
+    lead:{w:'square',v:.06,cut:1900,len:1.2,fx:.12},hi:{w:'pulse',v:.045,cut:2400,len:1.2},harm:{w:'pulse',v:.04,cut:1800,len:1.2},
+    arp:{w:'square',v:.024,cut:1600,pl:.06,pat:[0,2,1,3],oct:0},
+    bass:{w:'square',v:.08,cut:700,sw:2.5,swt:.1,q:3,pat:'r..r..r.r..r..o.',gate:.6},
+    drums:{kit:'junk',k:'x.....x...x.....',s:'....x.......x...',h:'.x.x.x.x.x.x.x.x',m:'..o..x...o..x.o.'}},
+  drift:{bpm:90,key:2,vol:.36,echo:.5,form:['EP','MPB','MHPBd','OPABd'],
+    lead:{w:'sine',v:.13,a:.02,r:.2,vib:.25,len:1.9,fx:.45},hi:{w:'sine',v:.07,a:.02,r:.2,vib:.2,len:1.9,fx:.5},harm:{w:'triangle',v:.05,a:.02,r:.2,len:1.9,fx:.4},
+    pad:{w:'sawtooth',det:12,cut:900,a:.6,r:1.4,v:.028},
+    arp:{w:'triangle',v:.04,pl:.35,pat:[0,1,2,3,4,5],rate:2,oct:12},
+    bass:{w:'sine',v:.15,pat:'r-------r-------',r:.4},
+    drums:{kit:'soft',k:'x...............',h:'........o.......'}},
+  gaunt:{bpm:138,key:2,vol:.62,echo:.25,form:['MABD','OHABD','EPABD','MHABDF'],
+    lead:{w:'pulse',v:.07,cut:3200,len:1.6,fx:.12},hi:{w:'square',v:.04,cut:2800,len:1.6},harm:{w:'pulse',v:.045,cut:2400,len:1.6},
+    pad:{w:'sawtooth',det:12,cut:1500,a:.05,r:.2,v:.022},
+    arp:{w:'pulse',v:.026,cut:2800,pl:.06,pat:[0,1,2,3,2,1,0,3],oct:12},
+    bass:{w:'sawtooth',v:.09,cut:800,sw:2,swt:.1,q:2,pat:'r.r.r.r.o.o.r.r.',gate:.7},
+    drums:{kit:'club',k:'x.x...x.x.x.....',s:'....x.......x...',h:'x.x.x.x.x.x.x.x.',o:'..............x.'}},
+  over:{bpm:96,key:2,vol:.5,once:true,len:40,seq:[[0,3,65],[4,3,62],[8,3,58],[12,22,55],[12,22,43,'bass'],[12,22,50,'pad'],[12,22,58,'pad'],[12,22,62,'pad']],
+    lead:{w:'triangle',v:.1,vib:.3,r:.4,fx:.3},pad:{w:'sawtooth',det:10,cut:1000,a:.15,r:1,v:.022},bass:{w:'sine',v:.14,r:.8}}};
+function musicWant(){if(!G)return {id:'title'};
+  if(G.state==='over')return {id:G.overT<5?'over':'title'};
+  return {id:['junk','drift','gaunt'][G.zone]||'junk',muffle:G.state==='paused'||G.state==='trans'};}
+/* ================= NAN II THEME MUSIC =================
+   The boss's NAN II Theme, written in his Melody Cartridge (2026-09-24): four bars of
+   G minor at 132 BPM, 29 eighth notes. This engine is the same in all three NAN II
+   games; each game dresses the tune in its own arrangements (MUSIC, just above):
+   tempo, key, sounds, chords and a beat. Chords under the tune: Gm | Eb | Cm | Bb F.
+   The game says what it wants to hear through musicWant(). MUSIC in the pause
+   menu sets its level, 0-10 (0 is off), and M turns it off and back on --
+   remembered for all three games ('b9musvol'; 'b9music', the old on/off, is
+   still written and read). VOLUME, under it, is everything (B9VOL, below).
+   An arrangement is sections of four bars; each section is a string of parts:
+   M the tune, O the tune an octave up, E the tune in bars 1 and 3 only (call and
+   answer), H a harmony under the tune, P pad chords, A arpeggio, B bass,
+   D the drums, d kick and hats only, F a snare fill into the next section. */
+const B9MUS=(()=>{
+/* the tune as written: 16th step -> MIDI note, every note an eighth */
+const TUNE={};[0,16,32].forEach(o=>[[0,55],[4,67],[6,67],[8,58],[10,58],[12,60],[14,62]].forEach(([s,p])=>TUNE[s+o]=p));
+[[48,67],[50,67],[52,62],[54,62],[56,65],[58,65],[60,58],[62,58]].forEach(([s,p])=>TUNE[s]=p);
+/* one chord per half bar, voiced round G3, and the bass root under each */
+const CH=[[55,58,62],[55,58,62],[55,58,63],[55,58,63],[55,60,63],[55,60,63],[53,58,62],[53,57,60]];
+const RT=[43,43,39,39,48,48,46,41];
+const same=(a,b)=>CH[a]&&CH[b]&&CH[a].join()===CH[b].join();
+/* the harmony voice: the highest chord note at least a minor third under the tune */
+function harm(p,ch){let b=null;for(const c of ch)for(let o=-36;o<=36;o+=12){const q=c+o;if(q<=p-3&&(b===null||q>b))b=q;}return b;}
+const hz=m=>440*Math.pow(2,(m-69)/12);
+const PW=new WeakMap(),NZ=new WeakMap();
+function pulse(c){let w=PW.get(c);if(!w){const N=48,re=new Float32Array(N),im=new Float32Array(N);
+  for(let n=1;n<N;n++)re[n]=2/(n*Math.PI)*Math.sin(n*Math.PI*.25);w=c.createPeriodicWave(re,im);PW.set(c,w);}return w;}
+function noise(c){let b=NZ.get(c);if(!b){b=c.createBuffer(1,c.sampleRate,c.sampleRate);const d=b.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;NZ.set(c,b);}return b;}
+function panTo(c,x,dst){if(!x||!c.createStereoPanner)return dst;const p=c.createStereoPanner();p.pan.value=x;p.connect(dst);return p;}
+/* ONE NOTE. o is the instrument: w wave (sine triangle square sawtooth pulse bell), v volume,
+   a attack, r release, pl pluck (rings down with this time constant instead of holding),
+   cut low-pass, sw filter sweep (starts sw times higher), q resonance, det detune in cents
+   (two voices), vib vibrato in semitones, fx echo send, bus 'pump' to duck under the kick */
+function voice(c,out,o,m,t,dur,px){
+  const g=c.createGain();g.connect(panTo(c,px||o.pan,out[o.bus||'main']));
+  if(o.fx){const s=c.createGain();s.gain.value=o.fx;g.connect(s);s.connect(out.fx);}
+  let head=g;
+  if(o.cut){const lp=c.createBiquadFilter();lp.type='lowpass';lp.Q.value=o.q||.7;
+    if(o.sw){lp.frequency.setValueAtTime(o.cut*o.sw,t);lp.frequency.exponentialRampToValueAtTime(o.cut,t+(o.swt||.25));}
+    else lp.frequency.value=o.cut;lp.connect(g);head=lp;}
+  const f=hz(m),a=o.a||.005,r=o.r||.04,end=Math.max(t+a+.02,t+dur),stop=o.pl?t+a+o.pl*5:end+r*2;
+  const car=[],all=[];
+  const mk=d=>{const x=c.createOscillator();if(o.w==='pulse')x.setPeriodicWave(pulse(c));else x.type=o.w==='bell'?'sine':o.w;
+    x.frequency.value=f;if(d)x.detune.value=d;x.connect(head);car.push(x);all.push(x);};
+  if(o.det){mk(o.det);mk(-o.det);}else mk(0);
+  if(o.w==='bell'){const mo=c.createOscillator(),mg=c.createGain();mo.frequency.value=f*(o.ratio||3.5);
+    mg.gain.setValueAtTime(f*(o.idx||1.2),t);mg.gain.exponentialRampToValueAtTime(f*.01,t+(o.idt||.5));
+    mo.connect(mg);for(const x of car)mg.connect(x.frequency);all.push(mo);}
+  if(o.vib){const l=c.createOscillator(),lg=c.createGain();l.frequency.value=o.vibr||5.5;
+    lg.gain.setValueAtTime(0,t);lg.gain.linearRampToValueAtTime(f*(Math.pow(2,o.vib/12)-1),t+Math.max(.05,Math.min(.35,dur)));
+    l.connect(lg);for(const x of car)lg.connect(x.frequency);all.push(l);}
+  const v=o.det?o.v*.6:o.v;
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+a);
+  if(o.pl)g.gain.setTargetAtTime(0,t+a,o.pl);else g.gain.setTargetAtTime(0,end,r/3);
+  for(const x of all){x.start(t);x.stop(stop);}}
+/* THE KITS: chip (NES-style), club (drum machine), soft (brushes), junk (clanks) */
+function hit(c,out,k,kit,t,v){const d=out.main;
+  if(k==='k'){const o=c.createOscillator(),g=c.createGain(),chip=kit==='chip';o.type=chip?'triangle':'sine';
+    o.frequency.setValueAtTime(chip?210:150,t);o.frequency.exponentialRampToValueAtTime(chip?48:42,t+.11);
+    const vol=v*(kit==='soft'?.2:chip?.34:.3),len=kit==='club'?.34:.22;
+    g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+len);o.connect(g);g.connect(d);o.start(t);o.stop(t+len+.02);
+    if(out.pumpOn){const p=out.pump.gain;p.cancelScheduledValues(t);p.setValueAtTime(1,t);p.linearRampToValueAtTime(.3,t+.012);p.linearRampToValueAtTime(1,t+out.sd*3.5);}
+    return;}
+  if(k==='m'){/* a clank: two squares at a clashing ratio through a band-pass */
+    const g=c.createGain(),bp=c.createBiquadFilter();bp.type='bandpass';bp.frequency.value=2400;bp.Q.value=1.5;
+    for(const f of [540,540*1.53]){const o=c.createOscillator();o.type='square';o.frequency.value=f*(.97+Math.random()*.06);o.connect(bp);o.start(t);o.stop(t+.12);}
+    g.gain.setValueAtTime(.1*v,t);g.gain.exponentialRampToValueAtTime(.001,t+.1);bp.connect(g);g.connect(panTo(c,.3,d));return;}
+  const s=c.createBufferSource();s.buffer=noise(c);const f=c.createBiquadFilter(),g=c.createGain();
+  let len,vol,px=0;
+  if(k==='s'){f.type='bandpass';f.frequency.value=kit==='chip'?3200:1800;f.Q.value=.8;len=kit==='soft'?.12:.16;vol=kit==='soft'?.07:.16;
+    if(kit!=='chip'&&kit!=='soft'){const o=c.createOscillator(),og=c.createGain();o.type='triangle';o.frequency.setValueAtTime(190,t);o.frequency.exponentialRampToValueAtTime(150,t+.08);
+      og.gain.setValueAtTime(.12*v,t);og.gain.exponentialRampToValueAtTime(.001,t+.09);o.connect(og);og.connect(d);o.start(t);o.stop(t+.1);}}
+  else if(k==='h'){f.type='highpass';f.frequency.value=8000;len=.035;vol=kit==='soft'?.03:.05;px=-.25;}
+  else{f.type='highpass';f.frequency.value=6500;len=.18;vol=.045;px=.25;}
+  g.gain.setValueAtTime(vol*v,t);g.gain.exponentialRampToValueAtTime(.001,t+len);
+  s.connect(f);f.connect(g);g.connect(panTo(c,px,d));s.start(t,Math.random()*.5);s.stop(t+len+.02);}
+/* ONE 16th of an arrangement, i steps in */
+function step(c,out,A,i,t,sd){
+  out.sd=sd;out.pumpOn=!!A.pump;
+  if(A.seq){for(const e of A.seq)if(e[0]===i)voice(c,out,A[e[3]||'lead'],e[2]+(A.key||0),t,e[1]*sd);return;}
+  const s=i%64,sec=A.form[Math.floor(i/64)%A.form.length],K=A.key||0,h=s>>3,bar=s>>4,j=s%16,has=x=>sec.includes(x);
+  const ch=CH[h].map(n=>n+K),mid=!same(bar*2,bar*2+1);
+  const p0=TUNE[s];
+  if(p0!=null&&!(has('E')&&bar%2)){const L=A.lead,p=p0+K+(L.oct||0),len=(L.len||1.7)*sd,low=has('M')||has('E');
+    if(low)voice(c,out,L,p,t,len);
+    if(has('O'))voice(c,out,A.hi||L,p+12,t,len);
+    if(has('H')){const q=harm(low?p:p+12,ch);if(q!==null)voice(c,out,A.harm||L,q,t,len);}}
+  if(has('P')&&s%8===0&&(j===0||!same(h,h-1))){const n=h<7&&same(h,h+1)?16:8;
+    for(const x of ch)voice(c,out,A.pad,x+(A.pad.oct||0),t,n*sd);}
+  if(has('A')){const R=A.arp,rt=R.rate||1;if(s%rt===0){const k=s/rt,tn=[ch[0],ch[1],ch[2],ch[0]+12,ch[1]+12,ch[2]+12];
+    voice(c,out,R,tn[R.pat[k%R.pat.length]]+(R.oct||0),t,rt*sd*(R.gate||.7),k%2?.35:-.35);}}
+  if(has('B')){const B=A.bass,pt=B.pat;let x=pt[j];if(x==='-'&&j===8&&mid)x='r';
+    if(x==='r'||x==='o'||x==='f'){const lim=mid&&j<8?8:16;let n=1;while(j+n<lim&&pt[j+n]==='-')n++;
+      voice(c,out,B,RT[h]+K+(B.oct||0)+(x==='o'?12:x==='f'?7:0),t,n*sd*(B.gate||.85));}}
+  const D=A.drums;
+  if(D&&(has('D')||has('d'))){const full=has('D'),fill=has('F')&&s>=56;
+    const at=(str,k)=>{const q=str&&str[j];if(q&&q!=='.')hit(c,out,k,D.kit,t,q==='x'?1:.5);};
+    at(D.k,'k');at(D.h,'h');if(full&&!fill){at(D.s,'s');at(D.o,'o');at(D.m,'m');}
+    if(fill&&s%(D.fr||1)===0)hit(c,out,'s',D.kit,t,.35+.65*(s-56)/7);}}
+/* the music's own little mixer: parts -> main -> bus (off switch) -> low-pass (muffled
+   in the pause menu) -> the game's master. The echo is its own too, a dotted eighth. */
+function rig(c,dest){const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=16000;lp.connect(dest);
+  const bus=c.createGain();bus.connect(lp);const main=c.createGain();main.connect(bus);
+  const pump=c.createGain();pump.connect(main);
+  const fx=c.createGain(),dl=c.createDelay(2),fb=c.createGain(),fl=c.createBiquadFilter();fl.type='lowpass';fl.frequency.value=2600;
+  fx.connect(dl);dl.connect(fl);fl.connect(fb);fb.connect(dl);fl.connect(main);
+  return {lp,bus,main,pump,fx,dl,fb,sd:.1,pumpOn:false};}
+function dress(out,A,bpm,t){out.main.gain.setValueAtTime(A.vol||1,t);out.dl.delayTime.setValueAtTime(Math.min(1.5,.75*60/bpm),t);out.fb.gain.setValueAtTime(A.echo!=null?A.echo:.3,t);}
+/* the level, 0-10, 3 dB a step; 0 is off, and last is where M brings it back to */
+const S={lv:10,last:10,id:null,A:null,i:0,next:0,done:true,muf:null,out:null};
+const lvl=v=>Math.max(0,Math.min(10,Math.round(+v)||0)),lvGain=v=>v>0?Math.pow(10,(v-10)*3/20):0;
+try{const v=localStorage.getItem('b9musvol');S.lv=v!==null?lvl(v):localStorage.getItem('b9music')==='0'?0:10;
+  S.last=lvl(localStorage.getItem('b9muslast')||10)||10;}catch(e){}
+function tick(){if(typeof AC==='undefined'||!AC||!MASTER)return;
+  if(!S.out){S.out=rig(AC,MASTER);S.out.bus.gain.value=lvGain(S.lv);}
+  const now=AC.currentTime,w=S.lv>0?musicWant():null,muf=!!(w&&w.muffle);
+  if(muf!==S.muf){S.muf=muf;S.out.lp.frequency.setTargetAtTime(muf?520:16000,now,.15);}
+  const A=w&&MUSIC[w.id];if(!A){S.id=null;return;}
+  const bpm=w.bpm||A.bpm;
+  if(w.id!==S.id){S.id=w.id;S.A=A;S.i=0;S.done=false;S.next=Math.max(S.next,now+.05);dress(S.out,A,bpm,S.next);}
+  if(S.next<now-.2)S.next=now+.05;
+  while(!S.done&&S.next<now+.25){const sd=60/bpm/4;step(AC,S.out,A,S.i,S.next,sd);S.next+=sd;
+    if(++S.i>=(A.len||A.form.length*64)){if(A.once)S.done=true;S.i=0;}}}
+function setLevel(v){v=lvl(v);if(v===S.lv)return;if(S.lv>0)S.last=S.lv;S.lv=v;
+  try{localStorage.setItem('b9musvol',v);localStorage.setItem('b9muslast',S.last);localStorage.setItem('b9music',v>0?'1':'0');}catch(e){}
+  if(S.out)S.out.bus.gain.setTargetAtTime(lvGain(v),AC.currentTime,.06);if(!v)S.id=null;}
+function toggle(){setLevel(S.lv>0?0:S.last);}
+setInterval(tick,40);
+return {toggle,setLevel,step,rig,dress,get level(){return S.lv;},get on(){return S.lv>0;},get playing(){return S.id;}};})();
+/* THE VOLUME (the boss, 2026-09-24: "volume settings in their pause menus"): everything
+   the game plays, 0-10, 3 dB a step (0 is silent), remembered for all three games
+   ('b9vol'). It turns the output trim after the limiter, and 10 is the level the games
+   already had -- clear of the chest speaker's ceiling -- so it only ever comes down. */
+const B9VOL=(()=>{let v=10,node=null,base=1;
+try{const s=localStorage.getItem('b9vol');if(s!==null)v=Math.max(0,Math.min(10,Math.round(+s)||0));}catch(e){}
+const g=()=>v>0?base*Math.pow(10,(v-10)*3/20):0;
+function trim(n,b){node=n;base=b;n.gain.value=g();}
+function set(x){v=Math.max(0,Math.min(10,Math.round(x)));try{localStorage.setItem('b9vol',v);}catch(e){}
+  if(node)node.gain.setTargetAtTime(g(),node.context.currentTime,.03);}
+return {trim,set,get level(){return v;}};})();
+
+
+/* ---------------- input ---------------- */
+const keys={};let padSeen=false;
+addEventListener('keydown',e=>{keys[e.code]=true;audio();if(e.code==='KeyM'&&!e.repeat)B9MUS.toggle();if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();});
+addEventListener('keyup',e=>{keys[e.code]=false;});
+addEventListener('pointerdown',()=>{audio();cv.focus();});
+const prev={};
+function readInput(){let x=0,y=0,jump=!!(keys.Space||keys.KeyZ),fire=!!(keys.KeyJ||keys.KeyX),start=!!(keys.Enter||keys.KeyP),color=!!keys.KeyC,egg=!!(keys.KeyQ||keys.Tab),lay=!!keys.KeyT,up=!!(keys.ArrowUp||keys.KeyW),padA=false,back=!!keys.Escape;
+  if(keys.ArrowLeft||keys.KeyA)x-=1;if(keys.ArrowRight||keys.KeyD)x+=1;if(up)y-=1;if(keys.ArrowDown||keys.KeyS)y+=1;
+  for(const p of (navigator.getGamepads?navigator.getGamepads():[])){if(!p)continue;padSeen=true;const b=i=>p.buttons[i]&&(p.buttons[i].pressed||p.buttons[i].value>.5);
+    const ax=p.axes[0]||0,ay=p.axes[1]||0;if(Math.abs(ax)>.3)x+=Math.sign(ax);if(ay<-.4)y-=1;if(ay>.4)y+=1;
+    if(b(14))x-=1;if(b(15))x+=1;if(b(12)){y-=1;up=true;}if(b(13))y+=1;if(b(0)){jump=true;padA=true;}if(b(1)||b(4))lay=true;if(b(3))egg=true;if(b(2)||b(5))fire=true;if(b(1))back=true;if(b(9))start=true;if(b(8))color=true;if(b(0)||b(9))audio();}
+  x=clamp(x,-1,1);y=clamp(y,-1,1);
+  const r={x,y,up,jump,padA,fire,start,color,backP:back&&!prev.back,eggP:egg&&!prev.egg,layP:lay&&!prev.lay,jumpP:jump&&!prev.jump,fireP:fire&&!prev.fire,startP:start&&!prev.start,colorP:color&&!prev.color,upP:y<-.5&&!(prev.y<-.5),downP:y>.5&&!(prev.y>.5),leftP:x<0&&!(prev.x<0),rightP:x>0&&!(prev.x>0)};
+  Object.assign(prev,{jump,fire,start,color,egg,lay,x,y,back});return r;}
+
+/* EXIT GAME, from the pause menu: back to NAN II's media library, on the Games
+   tab. Inside NAN II's face the game is a page in the face's frame and NAN II's own
+   screen state is the truth, so the face server is asked to change it -- the
+   same /api/screen the shelf's game cards use to open a game. Opened on its
+   own anywhere else, the page just goes there itself. */
+let exiting=false;
+function exitGame(){if(exiting)return;exiting=true;const url='../';
+  let inB9=false;try{inB9=window.parent!==window&&!!parent.document.getElementById('dock');}catch(e){}
+  if(!inB9){location.href=url;return;}
+  fetch('/api/screen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({src:url})})
+    .then(r=>{if(!r.ok)throw 0;}).catch(()=>{location.href=url;});}
+/* THE PAUSE MENU: up and down to choose, A, space or fire to take it. */
+const PAUSE_MENU=['RESUME','VOLUME','MUSIC','MANUAL','QUIT TO THE MENU','EXIT GAME'];
+function pauseInput(inp){if(inp.backP){G.state='play';return;}/* B goes back */const n=PAUSE_MENU.length;G.pm=G.pm||0;if(inp.upP)G.pm=(G.pm+n-1)%n;if(inp.downP)G.pm=(G.pm+1)%n;
+  const m=PAUSE_MENU[G.pm],d=(inp.rightP?1:0)-(inp.leftP?1:0);if(d&&(m==='VOLUME'||m==='MUSIC')){if(m==='VOLUME')B9VOL.set(B9VOL.level+d);else B9MUS.setLevel(B9MUS.level+d);tone(700,700,.05,'square',.03);}
+  if(inp.jumpP||inp.fireP){if(m==='RESUME')G.state='play';else if(m==='MUSIC')B9MUS.toggle();else if(m==='MANUAL')manOpen();else if(m==='QUIT TO THE MENU')G=null;else if(m==='EXIT GAME')exitGame();}}
+
+/* ---------------- shared fx ---------------- */
+function burst(x,y,n,spd=240,col){for(let i=0;i<n;i++){const a=rnd(0,TAU),s=rnd(30,spd);G.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rnd(.4,1),col:col||C.ink});}}
+function say(t,d=2.2,sub=''){G.msg=t;G.sub=sub;G.msgT=d;}
+function pop(x,y,txtS){G.pops.push({x,y,t:1.2,txt:txtS});}
+function addScore(v,x,y){G.score+=v;if(x!==undefined)pop(x,y,String(v));if(G.score>=G.nextLife){G.lives++;G.nextLife+=15000;say('EXTRA NAN II',1.4);tone(523,1046,.4,'triangle',.06);}}
+function kaboom(x,y,big){burst(x,y,big?30:16);G.rings.push({x,y,t:0});G.shake=Math.max(G.shake,big?8:4);G.hitStop=Math.max(G.hitStop,.04);
+  if(AC){noiseHit(0,0,big?.28:.2,big?.6:.4,rnd(3500,5500),110);thump(0,0,.28,rnd(120,160),40,.3);chirp(0,0,.04,rnd(700,950),120,.16);}}
+function sndJump(){if(AC)chirp(0,0,.035,280,720,.12,'square');}
+function sndStomp(){if(AC){thump(0,0,.3,180,50,.2);chirp(0,0,.04,900,200,.15,'square');}}
+function sndHurt(){if(AC){noiseHit(0,0,.25,.5,4000,100);chirp(0,0,.05,700,90,.4,'sawtooth');}}
+function sndBolt(i){if(AC)pluck(nHz(i%PENTA.length),0,0,.05,.4);}
+
+/* ---------------- black hole ---------------- */
+function drawHole(x,y,r,a=1){ctx.save();ctx.translate(x,y);ctx.globalAlpha=a;ctx.strokeStyle=C.ink;ctx.lineCap='round';
+  for(let k=0;k<5;k++){ctx.lineWidth=2.5-k*.3;ctx.beginPath();for(let s=0;s<=40;s++){const u=s/40,ang=-T*2.2+k*TAU/5+u*4.2,rr=r*(1.9-1.4*u);s?ctx.lineTo(Math.cos(ang)*rr,Math.sin(ang)*rr*.8):ctx.moveTo(Math.cos(ang)*rr,Math.sin(ang)*rr*.8);}ctx.globalAlpha=a*(.35+k*.12);ctx.stroke();}
+  ctx.globalAlpha=a;ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(0,0,r*.55,r*.44,0,0,TAU);ctx.stroke();
+  ctx.save();ctx.globalCompositeOperation='destination-out';ctx.beginPath();ctx.ellipse(0,0,r*.5,r*.4,0,0,TAU);ctx.fill();ctx.restore();
+  for(let i=0;i<14;i++){const ang=T*3+i*1.7,rr=r*(.6+((T*.7+i*.37)%1)*1.4);ctx.fillStyle=C.ink;ctx.globalAlpha=a*.7;ctx.fillRect(Math.cos(ang)*rr,Math.sin(ang)*rr*.8,2,2);}
+  ctx.restore();}
+
+/* ---------------- the Smart Appliances ---------------- */
+function drawVac(x,y,dir){ctx.strokeStyle=C.ink;ctx.fillStyle=C.ink;ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(x,y-6,15,6,0,0,TAU);ctx.stroke();
+  ctx.fillRect(x-12,y-2,24,2);ctx.beginPath();ctx.arc(x+dir*6,y-8,2,0,TAU);ctx.fill();const b=Math.sin(T*20)*2;ctx.fillRect(x-dir*16,y-1,3,2+b);}
+function drawToaster(x,y,pop){ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.beginPath();ctx.roundRect?ctx.roundRect(x-14,y-20,28,20,4):ctx.rect(x-14,y-20,28,20);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x-8,y-20);ctx.lineTo(x-8,y-24-pop*6);ctx.moveTo(x+4,y-20);ctx.lineTo(x+4,y-24-pop*6);ctx.stroke();
+  ctx.fillStyle=C.ink;ctx.fillRect(x+10,y-12,5,3);ctx.fillRect(x-8,y-10,2,2);ctx.fillRect(x-3,y-10,2,2);}
+function drawSpeaker(x,y){ctx.strokeStyle=C.ink;ctx.fillStyle=C.ink;ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(x,y-24,9,3,0,0,TAU);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x-9,y-24);ctx.lineTo(x-9,y-2);ctx.moveTo(x+9,y-24);ctx.lineTo(x+9,y-2);ctx.stroke();ctx.beginPath();ctx.ellipse(x,y-2,9,3,0,0,Math.PI);ctx.stroke();
+  const glowOn=Math.floor(T*3)%2;if(glowOn){ctx.beginPath();ctx.ellipse(x,y-24,6,1.5,0,0,TAU);ctx.fill();}for(let k=0;k<3;k++)ctx.fillRect(x-5+k*4,y-14,2,2);}
+function drawToast(x,y,a){ctx.save();ctx.translate(x,y);ctx.rotate(a);ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-6,6);ctx.lineTo(-6,-2);ctx.quadraticCurveTo(-7,-8,0,-8);ctx.quadraticCurveTo(7,-8,6,-2);ctx.lineTo(6,6);ctx.closePath();ctx.stroke();ctx.restore();}
+function drawBolt(x,y){ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.beginPath();for(let i=0;i<=6;i++){const a=i/6*TAU+T*2;i?ctx.lineTo(x+Math.cos(a)*6,y+Math.sin(a)*6):ctx.moveTo(x+Math.cos(a)*6,y+Math.sin(a)*6);}ctx.stroke();ctx.fillStyle=C.ink;ctx.fillRect(x-1.5,y-1.5,3,3);}
+function drawCrate(r){ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.strokeRect(r.x+1,r.y+1,r.w-2,r.h-2);ctx.globalAlpha=.4;ctx.beginPath();ctx.moveTo(r.x+4,r.y+4);ctx.lineTo(r.x+r.w-4,r.y+r.h-4);ctx.moveTo(r.x+r.w-4,r.y+4);ctx.lineTo(r.x+4,r.y+r.h-4);ctx.stroke();ctx.globalAlpha=1;}
+/* drifting junk for the asteroid zone: fridge, washer, toaster, nut */
+function drawJunk(j,x,y){ctx.save();ctx.translate(x,y);ctx.rotate(j.a);ctx.strokeStyle=C.ink;ctx.lineWidth=2;const r=j.r;
+  if(j.kind===0){ctx.strokeRect(-r*.6,-r,r*1.2,r*2);ctx.beginPath();ctx.moveTo(-r*.6,-r*.3);ctx.lineTo(r*.6,-r*.3);ctx.moveTo(r*.4,-r*.8);ctx.lineTo(r*.4,-r*.5);ctx.moveTo(r*.4,-r*.1);ctx.lineTo(r*.4,r*.3);ctx.stroke();}
+  else if(j.kind===1){ctx.strokeRect(-r*.8,-r*.8,r*1.6,r*1.6);ctx.beginPath();ctx.arc(0,r*.1,r*.45,0,TAU);ctx.stroke();ctx.fillStyle=C.ink;ctx.fillRect(-r*.6,-r*.65,r*.3,r*.12);}
+  else if(j.kind===2){ctx.strokeRect(-r,-r*.6,r*2,r*1.2);ctx.beginPath();ctx.moveTo(-r*.4,-r*.6);ctx.lineTo(-r*.4,-r*.9);ctx.moveTo(r*.3,-r*.6);ctx.lineTo(r*.3,-r*.9);ctx.stroke();}
+  else{ctx.beginPath();for(let i=0;i<=6;i++){const a=i/6*TAU;i?ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r):ctx.moveTo(r,0);}ctx.stroke();ctx.beginPath();ctx.arc(0,0,r*.4,0,TAU);ctx.stroke();}
+  ctx.restore();}
+
+/* =================== ZONE 1: JUNKYARD (platformer) =================== */
+const JUNK={
+  name:'THE JUNKYARD',hint:'DRIVE  LEFT RIGHT   A JUMP   HOLD A BOOST   X FIRE   B EGG',
+  init(){const lv=G.loop,Z={solids:[],enemies:[],bolts:[],toasts:[],waves:[],camX:0};let x=0,gy=440;
+    const ground=(w)=>{Z.solids.push({x,y:gy,w,h:H-gy+200,ground:1});const x0=x;x+=w;return x0;};
+    ground(700);Z.start={x:120,y:gy};
+    const len=5600+lv*900;
+    while(x<len){const r=Math.random();
+      if(r<.22){x+=rnd(90,130+lv*12);}                                             /* pit */
+      else if(r<.4){gy=clamp(gy+(Math.random()<.5?-1:1)*rnd(30,55),330,470);ground(rnd(240,400));}   /* step */
+      else if(r<.55){const x0=ground(rnd(320,460));const n=1+Math.floor(Math.random()*2);for(let k=0;k<n;k++)Z.solids.push({x:x0+140+k*44,y:gy-40,w:40,h:40});
+        if(Math.random()<.6)Z.solids.push({x:x0+140,y:gy-80,w:40,h:40});Z.bolts.push({x:x0+160,y:gy-110});}
+      else if(r<.7){const x0=ground(rnd(360,480));const py=gy-rnd(110,150);Z.solids.push({x:x0+100,y:py,w:150,h:18,plat:1});for(let k=0;k<3;k++)Z.bolts.push({x:x0+125+k*50,y:py-26});
+        if(Math.random()<.5)Z.enemies.push({k:'speaker',x:x0+260,y:py-60,y0:py-60,cd:rnd(1,3),alive:1});}
+      else{const x0=ground(rnd(380,520));const t=Math.random();
+        if(t<.5)Z.enemies.push({k:'vac',x:x0+rnd(120,260),y:gy,vx:-(50+lv*12),alive:1,min:x0+10,max:x});
+        else if(t<.8)Z.enemies.push({k:'toaster',x:x0+rnd(160,300),y:gy,cd:rnd(1,2.5),alive:1,pop:0});
+        else Z.enemies.push({k:'speaker',x:x0+rnd(160,300),y:gy-120,y0:gy-120,cd:rnd(1,3),alive:1});
+        for(let k=0;k<3;k++)Z.bolts.push({x:x0+60+k*30,y:gy-24});}}
+    ground(900);Z.hole={x:x+300-900+320,y:gy-90};Z.end=x;
+    const p=G.p={x:Z.start.x,y:Z.start.y,vx:0,vy:0,dir:1,onG:false,fuel:1,coyote:0,buf:0,inv:1.5,thrust:false,lift:0,tilt:0};Z.safe={x:p.x,y:p.y};return Z;},
+  hitRect(p){return {x:p.x-13,y:p.y-30,w:26,h:30};},
+  update(dt,inp){const Z=G.Z,p=G.p,lv=G.loop;
+    /* driving */
+    const acc=p.onG?1300:650;p.thrust=inp.x!==0;if(inp.x){p.dir=inp.x;p.vx+=inp.x*acc*dt;}else p.vx-=p.vx*(p.onG?3.2:.4)*dt;
+    p.vx=clamp(p.vx,-290,290);
+    /* jumping, coyote time and buffered presses */
+    p.coyote=p.onG?.09:p.coyote-dt;p.buf=inp.jumpP?.12:p.buf-dt;
+    if(p.buf>0&&p.coyote>0){p.vy=-560;p.onG=false;p.coyote=0;p.buf=0;sndJump();}
+    /* boosting: hold jump in the air to fire the foot jets */
+    /* THE FLOAT (see gameplay.py): the jets ease him up, dreamy, and hover him near the top */
+    p.lift=0;if(!p.onG&&inp.jump&&p.fuel>0&&p.coyote<=0&&!inp.jumpP&&p.vy>-130){const want=p.y<HUD+90?0:-130;p.vy+=(want-p.vy)*Math.min(1,2.6*dt);p.fuel=Math.max(0,p.fuel-dt*.48);p.lift=1;}
+    if(p.onG)p.fuel=Math.min(1,p.fuel+dt*1.1);
+    if(!inp.jump&&p.vy<-200&&!p.lift)p.vy+=1400*dt;  /* short hop if you let go early */
+    const glide=inp.jump&&!p.onG&&p.vy>0;   /* gauge empty, A still held: a slow glide down */
+    if(!p.lift)p.vy+=(glide?700:1500)*dt;p.vy=Math.min(p.vy,glide?300:900);
+    /* move and collide, one axis at a time */
+    p.x+=p.vx*dt;let r=this.hitRect(p);
+    for(const s of Z.solids){if(s.plat)continue;if(r.x<s.x+s.w&&r.x+r.w>s.x&&r.y<s.y+s.h&&r.y+r.h>s.y+1){if(p.vx>0)p.x=s.x-13.01;else if(p.vx<0)p.x=s.x+s.w+13.01;p.vx=0;r=this.hitRect(p);}}
+    p.x=Math.max(20,p.x);
+    const py0=p.y;p.y+=p.vy*dt;r=this.hitRect(p);const was=p.onG;p.onG=false;
+    for(const s of Z.solids){if(r.x<s.x+s.w&&r.x+r.w>s.x&&r.y<s.y+s.h&&r.y+r.h>s.y){
+      if(p.vy>=0&&py0<=s.y+2){p.y=s.y;p.vy=0;p.onG=true;}
+      else if(!s.plat&&p.vy<0&&py0-30>=s.y+s.h-2){p.y=s.y+s.h+30;p.vy=0;}
+      r=this.hitRect(p);}}
+    if(p.onG&&!was&&py0<p.y){G.shake=Math.max(G.shake,1.5);for(let k=0;k<6;k++)G.dust.push({x:p.x+rnd(-12,12),y:p.y-2,vx:rnd(-90,90),vy:-rnd(10,50),life:rnd(.3,.6),max:.6});}
+    if(p.onG&&Math.abs(p.vx)>80&&Math.random()<dt*25)G.dust.push({x:p.x-p.dir*10,y:p.y-2,vx:-p.dir*rnd(30,80),vy:-rnd(10,40),life:.5,max:.5});
+    if(p.onG){const under=Z.solids.some(s=>s.ground&&p.x-14>=s.x&&p.x+14<=s.x+s.w&&Math.abs(s.y-p.y)<2);if(under)Z.safe={x:p.x,y:p.y};}
+    if(p.y>H+80){hurt(true);return;}
+    p.tilt=clamp(-p.vy/900,-.25,.25)*p.dir;
+    /* camera */
+    const tx=p.x-W*.35+p.dir*60;Z.camX+=(tx-Z.camX)*Math.min(1,3*dt);Z.camX=Math.max(0,Z.camX);
+    /* enemies */
+    for(const e of Z.enemies){if(!e.alive)continue;
+      if(e.k==='vac'){e.x+=e.vx*dt;if(e.x<e.min+14||e.x>e.max-14){e.vx*=-1;e.x=clamp(e.x,e.min+14,e.max-14);}
+        if(Math.random()<dt*.15)pop(e.x,e.y-26,'CLEANING!');}
+      else if(e.k==='toaster'){e.pop=Math.max(0,e.pop-dt*3);e.cd-=dt;if(e.cd<=0&&Math.abs(e.x-p.x)<560){e.cd=rnd(2,3)-lv*.15;e.pop=1;
+          Z.toasts.push({x:e.x,y:e.y-26,vx:clamp((p.x-e.x)*.8,-180,180),vy:-rnd(420,520),a:0,life:4});if(AC){tone(1200,1600,.08,'triangle',.04);}pop(e.x,e.y-40,'DING!');}}
+      else{e.y=e.y0+Math.sin(T*2+e.x)*16;e.cd-=dt;if(e.cd<=0&&Math.abs(e.x-p.x)<520){e.cd=rnd(2.6,3.6)-lv*.15;Z.waves.push({x:e.x,y:e.y-13,vx:Math.sign(p.x-e.x)*170,life:3});
+          if(AC)chirp(0,0,.03,500,900,.25,'sine');if(Math.random()<.4)pop(e.x,e.y-40,"SORRY, I DIDN'T CATCH THAT");}}
+      const eh=e.k==='vac'?12:e.k==='toaster'?20:28,er={x:e.x-14,y:e.y-eh,w:28,h:eh};r=this.hitRect(p);
+      if(r.x<er.x+er.w&&r.x+r.w>er.x&&r.y<er.y+er.h&&r.y+r.h>er.y){
+        if(p.vy>0&&p.y-er.y<16){e.alive=0;kaboom(e.x,e.y-eh/2);sndStomp();addScore(200,e.x,e.y-eh-10);p.vy=inp.jump?-560:-400;}
+        else if(p.inv<=0)hurt(false);}}
+    for(const t of Z.toasts){t.vy+=900*dt;t.x+=t.vx*dt;t.y+=t.vy*dt;t.a+=dt*8;t.life-=dt;
+      if(p.inv<=0&&Math.abs(t.x-p.x)<14&&Math.abs(t.y-(p.y-15))<18){t.life=0;hurt(false);}}
+    Z.toasts=Z.toasts.filter(t=>t.life>0&&t.y<H+50);
+    for(const w of Z.waves){w.x+=w.vx*dt;w.life-=dt;if(p.inv<=0&&Math.abs(w.x-p.x)<14&&Math.abs(w.y-(p.y-15))<16){w.life=0;hurt(false);}}
+    Z.waves=Z.waves.filter(w=>w.life>0);
+    /* NAN II's KIT: X fires a laser the way he faces, B lays a timer egg at his feet */
+    kitInput(Z,inp,dt,p.x+p.dir*20,p.y-10,p.dir*720+p.vx,p.x,p.y-14,p.vx*.4,-120);
+    for(const l of Z.lasers){l.x+=l.vx*dt;l.life-=dt;
+      if(Z.solids.some(s=>!s.plat&&l.x>s.x&&l.x<s.x+s.w&&l.y>s.y&&l.y<s.y+s.h)){l.life=0;burst(l.x,l.y,4,80);continue;}
+      for(const e of Z.enemies){if(!e.alive)continue;const eh=e.k==='vac'?12:e.k==='toaster'?20:28;
+        if(Math.abs(l.x-e.x)<16&&l.y>e.y-eh-6&&l.y<e.y+6){e.alive=0;l.life=0;kaboom(e.x,e.y-eh/2);addScore(150,e.x,e.y-eh-10);break;}}
+      if(l.life>0)for(const t of Z.toasts)if(t.life>0&&Math.abs(t.x-l.x)<14&&Math.abs(t.y-l.y)<14){t.life=0;l.life=0;burst(t.x,t.y,6,100);addScore(25);break;}
+      if(l.life>0)for(const w of Z.waves)if(w.life>0&&Math.abs(w.x-l.x)<16&&Math.abs(w.y-l.y)<16){w.life=0;l.life=0;burst(w.x,w.y,6,100);break;}}
+    Z.lasers=Z.lasers.filter(l=>l.life>0);
+    for(const e of Z.kegs){e.t-=dt;e.vy=Math.min(e.vy+900*dt,600);e.vx-=e.vx*2*dt;const ox=e.x,oy=e.y;e.x+=e.vx*dt;e.y+=e.vy*dt;
+      for(const s of Z.solids){if(e.x<s.x||e.x>s.x+s.w)continue;
+        if(oy+7<=s.y&&e.y+7>=s.y){e.y=s.y-7;e.vy=0;e.vx*=.5;}
+        else if(!s.plat&&e.y+7>s.y&&e.y-7<s.y+s.h){e.x=ox;e.vx=0;}}
+      if(e.y>H+60){e.gone=1;continue;}
+      if(e.t<=0||Z.enemies.some(q=>q.alive&&Math.abs(q.x-e.x)<18&&e.y>q.y-30&&e.y<q.y+8)){e.gone=1;junkBlast(Z,e.x,e.y,95);}}
+    Z.kegs=Z.kegs.filter(e=>!e.gone);
+    for(const b of Z.bolts)if(!b.got&&Math.abs(b.x-p.x)<20&&Math.abs(b.y-(p.y-15))<24){b.got=1;G.boltN=(G.boltN||0)+1;addScore(25);sndBolt(G.boltN%8);burst(b.x,b.y,6,100);}
+    if(Math.hypot(p.x-Z.hole.x,(p.y-15)-Z.hole.y)<46)enterHole(Z.hole.x-Z.camX,Z.hole.y);},
+  draw(){const Z=G.Z,cx=Z.camX,p=G.p;
+    for(const s of Z.solids){const x=s.x-cx;if(x>W||x+s.w<0)continue;
+      if(s.ground){ctx.strokeStyle=C.rim;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x,s.y+(s.x===0?0:0));ctx.lineTo(x+s.w,s.y);ctx.stroke();ctx.beginPath();ctx.moveTo(x,s.y);ctx.lineTo(x,H);ctx.moveTo(x+s.w,s.y);ctx.lineTo(x+s.w,H);ctx.strokeStyle=C.dim;ctx.lineWidth=2;ctx.stroke();
+        ctx.fillStyle=C.faint;for(let gx=Math.ceil(s.x/18)*18;gx<s.x+s.w;gx+=18)for(let gy=s.y+14+((gx/18)%2)*9;gy<H;gy+=18)ctx.fillRect(gx-cx,gy,2,2);}
+      else if(s.plat){ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.strokeRect(x,s.y,s.w,s.h);ctx.globalAlpha=.4;for(let k=8;k<s.w;k+=16){ctx.beginPath();ctx.moveTo(x+k,s.y);ctx.lineTo(x+k-8,s.y+s.h);ctx.stroke();}ctx.globalAlpha=1;}
+      else drawCrate({x,y:s.y,w:s.w,h:s.h});}
+    for(const b of Z.bolts)if(!b.got)drawBolt(b.x-cx,b.y+Math.sin(T*3+b.x)*3);
+    drawHole(Z.hole.x-cx,Z.hole.y,44);
+    for(const e of Z.enemies)if(e.alive){const x=e.x-cx;if(x<-40||x>W+40)continue;if(e.k==='vac')drawVac(x,e.y,Math.sign(e.vx));else if(e.k==='toaster')drawToaster(x,e.y,e.pop);else drawSpeaker(x,e.y);}
+    for(const t of Z.toasts)drawToast(t.x-cx,t.y,t.a);
+    ctx.strokeStyle=C.ink;ctx.lineWidth=2;for(const w of Z.waves){ctx.globalAlpha=Math.min(1,w.life*2);const d=Math.sign(w.vx);for(let k=0;k<3;k++){ctx.beginPath();ctx.arc(w.x-cx-d*k*6,w.y,6+k*3,d>0?-.9:Math.PI-.9,d>0?.9:Math.PI+.9);ctx.stroke();}}ctx.globalAlpha=1;
+    kitDraw(Z,cx);
+    drawB9(p.x-cx,p.y-14,p.dir,p.tilt);
+    /* fuel gauge */
+    ctx.fillStyle=C.dim;ctx.fillRect(20,HUD+14,120,6);ctx.fillStyle=C.ink;ctx.fillRect(20,HUD+14,120*p.fuel,6);ctx.font='16px x';ctx.textAlign='left';txt('BOOST',150,HUD+22);},
+  camX(){return G.Z.camX;}};
+
+/* =================== ZONE 2: DRIFT (asteroids) =================== */
+/* =================== ZONE 2: THE DRIFT, now an asteroid cave =================== 
+   Same asteroid-style flying (turn, thrust, fire, drift with inertia) through a big cave.
+   Shoot the gold veins in the rock to mine nuggets, collect enough gold to wake the black hole,
+   and deal with drifting junk and appliance pirates on the way. */
+const CS=40;
+/* NAN II's eggs. Lay with Down, switch type with Q.
+   DRIFTER keeps NAN II's movement (not his facing) at the moment it's laid, and bursts on contact.
+   TIMER sits perfectly still, ticks for three seconds, then goes up big.
+   SEEKER creeps toward the nearest enemy and bursts when it arrives. */
+const EGGS=[{name:'DRIFTER',r:70},{name:'TIMER',r:105},{name:'SEEKER',r:70}];
+function drawEgg(x,y,type,e){ctx.save();ctx.translate(x,y);if(e&&type===0)ctx.rotate(Math.atan2(e.vy,e.vx)+Math.PI/2);ctx.strokeStyle=C.ink;ctx.fillStyle=C.ink;ctx.lineWidth=2;
+  ctx.beginPath();ctx.ellipse(0,0,6,8,0,0,TAU);ctx.stroke();
+  if(type===0){ctx.beginPath();ctx.moveTo(-3,2);ctx.lineTo(0,-3);ctx.lineTo(3,2);ctx.stroke();}
+  else if(type===1){const on=!e||Math.floor(T*(e.t<1?16:e.t<2?8:4))%2;if(on){ctx.beginPath();ctx.arc(0,1,2.5,0,TAU);ctx.fill();}}
+  else{ctx.beginPath();ctx.arc(0,0,3.5,0,TAU);ctx.stroke();ctx.fillRect(-1,-1,2,2);}
+  ctx.restore();}
+const DRIFT={
+  name:'THE DRIFT',hint:'TURN  LEFT RIGHT   A THRUST   X FIRE   B EGG   Y SWITCH EGG',
+  init(){const lv=G.loop,cw=110,ch=56,Z={cw,ch,g:new Uint8Array(cw*ch),hp:new Uint8Array(cw*ch),eggs:[],eggType:0,eggCd:0,junk:[],shots:[],eshots:[],pirates:[],nuggets:[],camX:0,camY:0,gold:0,need:12+lv*3,open:false,safeT:0};
+    const idx=(x,y)=>y*cw+x,g=Z.g;
+    /* cave: random fill, smoothed by a cellular automaton (1 = rock, 2 = gold) */
+    for(let y=0;y<ch;y++)for(let x=0;x<cw;x++)g[idx(x,y)]=(x<1||y<1||x>=cw-1||y>=ch-1||Math.random()<.47)?1:0;
+    for(let it=0;it<5;it++){const n=g.slice();for(let y=1;y<ch-1;y++)for(let x=1;x<cw-1;x++){let c=0;for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++)if(g[idx(x+i,y+j)])c++;n[idx(x,y)]=c>=5?1:0;}g.set(n);}
+    /* guarantee a winding passage from start to the hole */
+    let x=5,y=Math.floor(ch/2);const carve=(cx,cy,r)=>{for(let j=-r;j<=r;j++)for(let i=-r;i<=r;i++){const X=cx+i,Y=cy+j;if(X>0&&Y>0&&X<cw-1&&Y<ch-1&&i*i+j*j<=r*r+1)g[idx(X,Y)]=0;}};
+    carve(x,y,4);while(x<cw-7){x+=Math.random()<.7?1:0;y=clamp(y+(Math.random()<.5?-1:1)*(Math.random()<.6?1:0),6,ch-7);carve(x,y,2+(Math.random()<.3?1:0));}
+    Z.holeC={x:cw-6,y};carve(cw-6,y,5);
+    /* keep only the cave you can reach from the start */
+    const seen=new Uint8Array(cw*ch),q=[idx(5,Math.floor(ch/2))];seen[q[0]]=1;
+    while(q.length){const c=q.pop(),cx=c%cw,cy=(c/cw)|0;for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const n=idx(cx+dx,cy+dy);if(!seen[n]&&!g[n]){seen[n]=1;q.push(n);}}}
+    for(let i=0;i<g.length;i++)if(!g[i]&&!seen[i])g[i]=1;
+    /* gold veins: rock touching open space */
+    for(let y=1;y<ch-1;y++)for(let x=1;x<cw-1;x++){const i=idx(x,y);if(g[i]===1&&(!g[i-1]||!g[i+1]||!g[i-cw]||!g[i+cw])&&Math.random()<.05){g[i]=2;Z.hp[i]=2;
+      for(const n of [i-1,i+1,i-cw,i+cw])if(g[n]===1&&Math.random()<.4){g[n]=2;Z.hp[n]=2;}}}
+    for(let yy=0;yy<ch;yy++)for(let xx=0;xx<cw;xx++){const i=idx(xx,yy);if(g[i]===1)Z.hp[i]=(xx<1||yy<1||xx>=cw-1||yy>=ch-1)?255:3;}
+    Z.W=cw*CS;Z.H=ch*CS;Z.hole={x:(Z.holeC.x+.5)*CS,y:(Z.holeC.y+.5)*CS};
+    const open=[];for(let yy=2;yy<ch-2;yy++)for(let xx=12;xx<cw-10;xx++)if(!g[idx(xx,yy)]&&!g[idx(xx+1,yy)]&&!g[idx(xx,yy+1)]&&!g[idx(xx-1,yy)]&&!g[idx(xx,yy-1)])open.push([xx,yy]);
+    const pick=()=>{const o=open[Math.floor(Math.random()*open.length)];return {x:(o[0]+.5)*CS,y:(o[1]+.5)*CS};};
+    for(let i=0;i<7+lv*2;i++){const P=pick();Z.junk.push(this.mk(P.x,P.y,3));}
+    for(let i=0;i<2+lv;i++){const P=pick();Z.pirates.push({x:P.x,y:P.y,vx:0,vy:0,hp:2,cd:rnd(1,3),t:rnd(0,9)});}
+    G.p={x:5.5*CS,y:(Math.floor(ch/2)+.5)*CS,vx:0,vy:0,a:0,inv:2,cd:0,thrust:false};Z.safe={x:G.p.x,y:G.p.y};
+    Z.camX=G.p.x-W/2;Z.camY=G.p.y-(H+HUD)/2;return Z;},
+  /* a blast chews rock (3 damage at the heart, 2 further out, 1 at the rim), destroys enemies, and shoves NAN II without hurting him */
+  blast(x,y,r){const Z=G.Z,p=G.p;kaboom(x,y,true);G.shake=Math.max(G.shake,10);G.hitStop=Math.max(G.hitStop,.06);G.rings.push({x,y,t:0});burst(x,y,30,r*3);
+    if(AC){noiseHit(0,0,.35,.9,4000,60);thump(0,0,.4,90,30,.6);}
+    const X0=Math.floor((x-r)/CS),X1=Math.floor((x+r)/CS),Y0=Math.floor((y-r)/CS),Y1=Math.floor((y+r)/CS);
+    for(let Y=Y0;Y<=Y1;Y++)for(let X=X0;X<=X1;X++){if(X<0||Y<0||X>=Z.cw||Y>=Z.ch)continue;const i=Y*Z.cw+X,c=Z.g[i];if(!c||Z.hp[i]>=255)continue;
+      const d=Math.hypot((X+.5)*CS-x,(Y+.5)*CS-y);if(d>r)continue;const dmg=d<r*.5?3:d<r*.8?2:1;Z.hp[i]=Math.max(0,Z.hp[i]-dmg);
+      if(Z.hp[i]===0){Z.g[i]=0;const cx=(X+.5)*CS,cy=(Y+.5)*CS;burst(cx,cy,8,140);if(c===2)for(let k=0;k<3;k++)Z.nuggets.push({x:cx+rnd(-8,8),y:cy+rnd(-8,8),vx:rnd(-60,60),vy:rnd(-60,60),t:rnd(0,9)});}}
+    for(const j of Z.junk)if(!j.dead&&Math.hypot(j.x-x,j.y-y)<r+j.r){j.dead=1;addScore([0,100,50,20][j.size]*2,j.x,j.y-j.r-8);burst(j.x,j.y,12,200);}
+    for(const pr of Z.pirates)if(!pr.dead&&Math.hypot(pr.x-x,pr.y-y)<r+16){pr.dead=1;addScore(400,pr.x,pr.y-26);pop(pr.x,pr.y-44,'ARRR...');}
+    for(const e of Z.eggs)if(!e.gone&&Math.hypot(e.x-x,e.y-y)<r*.8){e.chain=.08;}
+    const d=Math.hypot(p.x-x,p.y-y);if(d<r*1.4){const f=(1-d/(r*1.4))*240;p.vx+=(p.x-x)/(d||1)*f;p.vy+=(p.y-y)/(d||1)*f;}},
+  layEgg(){const Z=G.Z,p=G.p;if(Z.eggCd>0||Z.eggs.length>=4)return;Z.eggCd=.45;const t=Z.eggType,sp=Math.hypot(p.vx,p.vy);
+    /* a drifter inherits NAN II's movement exactly, whichever way he happens to be facing */
+    let vx=0,vy=0;if(t===0){vx=p.vx;vy=p.vy;}
+    Z.eggs.push({x:p.x,y:p.y,vx,vy,type:t,t:t===1?3:t===0?9:12,arm:.35});
+    if(AC){pluck(110,0,0,.08,.3,'sine');chirp(0,0,.03,300,160,.08,'triangle');}},
+  cell(x,y){const Z=G.Z,X=Math.floor(x/CS),Y=Math.floor(y/CS);if(X<0||Y<0||X>=Z.cw||Y>=Z.ch)return 1;return Z.g[Y*Z.cw+X];},
+  mk(x,y,size){const r=[0,11,20,34][size],sp=rnd(6,16)*(4-size)*.5+4*G.loop,a=rnd(0,TAU);
+    return {x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,a:rnd(0,TAU),va:rnd(-1.5,1.5),r,size,kind:size===3?Math.floor(rnd(0,2)):size===2?2:3};},
+  /* push a circle out of rock; returns impact speed */
+  collide(o,r){let hit=0;const x0=Math.floor((o.x-r)/CS),x1=Math.floor((o.x+r)/CS),y0=Math.floor((o.y-r)/CS),y1=Math.floor((o.y+r)/CS);
+    for(let Y=y0;Y<=y1;Y++)for(let X=x0;X<=x1;X++){if(!this.cell(X*CS+1,Y*CS+1))continue;
+      const nx=clamp(o.x,X*CS,X*CS+CS),ny=clamp(o.y,Y*CS,Y*CS+CS);let dx=o.x-nx,dy=o.y-ny,d=Math.hypot(dx,dy);
+      if(d<r){if(d<.01){dx=o.x-(X*CS+CS/2);dy=o.y-(Y*CS+CS/2);d=Math.hypot(dx,dy)||1;}const ux=dx/d,uy=dy/d,push=r-Math.min(d,r);
+        o.x+=ux*push;o.y+=uy*push;const vn=o.vx*ux+o.vy*uy;if(vn<0){hit=Math.max(hit,-vn);o.vx-=1.6*vn*ux;o.vy-=1.6*vn*uy;}}}
+    return hit;},
+  update(dt,inp){const Z=G.Z,p=G.p;
+    p.a+=inp.x*4.2*dt;p.thrust=inp.up||inp.padA;if(p.thrust){p.vx+=Math.cos(p.a)*400*dt;p.vy+=Math.sin(p.a)*400*dt;}
+    p.vx-=p.vx*.3*dt;p.vy-=p.vy*.3*dt;const sp=Math.hypot(p.vx,p.vy);if(sp>380){p.vx*=380/sp;p.vy*=380/sp;}
+    p.x+=p.vx*dt;p.y+=p.vy*dt;const imp=this.collide(p,14);
+    if(imp>40){p.vx*=.7;p.vy*=.7;G.shake=Math.max(G.shake,Math.min(6,imp/50));burst(p.x,p.y,4,80);if(AC)thump(0,0,.15,90,40,.15);}
+    if(imp>300&&p.inv<=0){hurt(false);return;}
+    p.cd-=dt;
+    const kj=!inp.padA;if(((kj&&inp.jumpP)||inp.fireP||(((kj&&inp.jump)||inp.fire)&&p.cd<=0))){p.cd=.2;Z.shots.push({x:p.x+Math.cos(p.a)*20,y:p.y+Math.sin(p.a)*20,vx:Math.cos(p.a)*640+p.vx,vy:Math.sin(p.a)*640+p.vy,life:.8});if(AC)defenderZap(0);}
+    if(p.thrust&&Math.random()<dt*70)G.trail.push({x:p.x-Math.cos(p.a)*20,y:p.y-Math.sin(p.a)*20,vx:-Math.cos(p.a)*rnd(60,120)+p.vx*.3,vy:-Math.sin(p.a)*rnd(60,120)+p.vy*.3,life:.5,max:.5});
+    /* shots: rock stops them, gold breaks after two hits and spills nuggets */
+    for(const s of Z.shots){s.x+=s.vx*dt;s.y+=s.vy*dt;s.life-=dt;const c=this.cell(s.x,s.y);
+      if(c){s.life=0;burst(s.x,s.y,4,90);const X=Math.floor(s.x/CS),Y=Math.floor(s.y/CS),i=Y*Z.cw+X;
+        /* all rock can be blasted away: plain rock takes 3 hits, gold 2; the outer edge of the map never breaks */
+        if(Z.hp[i]<255&&--Z.hp[i]<=0){Z.g[i]=0;const cx=(X+.5)*CS,cy=(Y+.5)*CS;
+          if(c===2){kaboom(cx,cy);for(let k=0;k<3;k++)Z.nuggets.push({x:cx+rnd(-8,8),y:cy+rnd(-8,8),vx:rnd(-60,60),vy:rnd(-60,60),t:rnd(0,9)});}
+          else{burst(cx,cy,14,160);G.shake=Math.max(G.shake,2);if(AC){noiseHit(0,0,.14,.3,2500,120);thump(0,0,.15,110,45,.2);}addScore(5);}}
+        else if(AC)chirp(0,0,.03,c===2?1400:600,c===2?900:300,.06,'triangle');continue;}
+      for(const j of Z.junk)if(!j.dead&&Math.hypot(s.x-j.x,s.y-j.y)<j.r+3){j.dead=1;s.life=0;kaboom(j.x,j.y,j.size===3);addScore([0,100,50,20][j.size],j.x,j.y-j.r-8);
+        if(j.size>1)for(let k=0;k<2;k++)Z.junk.push(this.mk(j.x,j.y,j.size-1));break;}
+      for(const pr of Z.pirates)if(!pr.dead&&s.life>0&&Math.hypot(s.x-pr.x,s.y-pr.y)<18){s.life=0;if(--pr.hp<=0){pr.dead=1;kaboom(pr.x,pr.y,true);addScore(300,pr.x,pr.y-26);pop(pr.x,pr.y-44,'ARRR... REBOOTING');}else{burst(pr.x,pr.y,8,120);if(AC)chirp(0,0,.04,800,400,.08);}}}
+    Z.shots=Z.shots.filter(s=>s.life>0);
+    for(const j of Z.junk){j.x+=j.vx*dt;j.y+=j.vy*dt;j.a+=j.va*dt;this.collide(j,j.r*.8);if(!j.dead&&p.inv<=0&&Math.hypot(p.x-j.x,p.y-j.y)<j.r+12){j.dead=1;kaboom(j.x,j.y,true);hurt(false);return;}}
+    Z.junk=Z.junk.filter(j=>!j.dead);
+    /* appliance pirates: notice you, chase, and shoot */
+    for(const pr of Z.pirates){if(pr.dead)continue;pr.t+=dt;const dx=p.x-pr.x,dy=p.y-pr.y,d=Math.hypot(dx,dy);
+      if(d<560){pr.vx+=dx/d*50*dt;pr.vy+=dy/d*50*dt;pr.cd-=dt;if(pr.cd<=0&&d<480){pr.cd=rnd(3,4)-G.loop*.15;Z.eshots.push({x:pr.x,y:pr.y,vx:dx/d*130,vy:dy/d*130,life:4.5});if(AC)chirp(0,0,.03,500,250,.1,'sawtooth');if(Math.random()<.25)pop(pr.x,pr.y-40,'YOUR GOLD, PLEASE');}}
+      else{pr.vx+=Math.cos(pr.t)*12*dt;pr.vy+=Math.sin(pr.t*1.3)*12*dt;}
+      const v=Math.hypot(pr.vx,pr.vy),vm=45+G.loop*6;if(v>vm){pr.vx*=vm/v;pr.vy*=vm/v;}pr.x+=pr.vx*dt;pr.y+=pr.vy*dt;this.collide(pr,16);
+      if(p.inv<=0&&d<28){pr.dead=1;kaboom(pr.x,pr.y,true);hurt(false);return;}}
+    Z.pirates=Z.pirates.filter(pr=>!pr.dead);
+    for(const e of Z.eshots){e.x+=e.vx*dt;e.y+=e.vy*dt;e.life-=dt;if(this.cell(e.x,e.y))e.life=0;if(p.inv<=0&&Math.hypot(e.x-p.x,e.y-p.y)<13){e.life=0;hurt(false);return;}}
+    Z.eshots=Z.eshots.filter(e=>e.life>0);
+    /* eggs */
+    Z.eggCd-=dt;if(inp.eggP){Z.eggType=(Z.eggType+1)%EGGS.length;pop(p.x,p.y-30,EGGS[Z.eggType].name+' EGG');if(AC)chirp(0,0,.03,700,900,.05);}
+    if(inp.layP)this.layEgg();
+    for(const e of Z.eggs){if(e.gone)continue;e.arm-=dt;e.t-=dt;
+      if(e.chain!==undefined){e.chain-=dt;if(e.chain<=0){e.gone=1;this.blast(e.x,e.y,EGGS[e.type].r);}continue;}
+      if(e.type===1){if(AC&&Math.floor(e.t*(e.t<1?8:4))!==Math.floor((e.t+dt)*(e.t<1?8:4)))chirp(0,0,.025,1500,1500,.03,'square');}
+      else if(e.type===2){let tgt=null,bd=420;for(const q of [...Z.pirates,...Z.junk]){const d=Math.hypot(q.x-e.x,q.y-e.y);if(d<bd){bd=d;tgt=q;}}
+        if(tgt){e.vx+=(tgt.x-e.x)/bd*70*dt;e.vy+=(tgt.y-e.y)/bd*70*dt;}const v=Math.hypot(e.vx,e.vy);if(v>45){e.vx*=45/v;e.vy*=45/v;}}
+      const ox=e.x,oy=e.y;e.x+=e.vx*dt;e.y+=e.vy*dt;
+      let boom=e.t<=0;
+      if(e.type!==1&&e.arm<=0){if(this.cell(e.x,e.y)){e.x=ox;e.y=oy;boom=true;}
+        if(Z.junk.some(j=>Math.hypot(j.x-e.x,j.y-e.y)<j.r+6)||Z.pirates.some(q=>Math.hypot(q.x-e.x,q.y-e.y)<20))boom=true;}
+      else if(e.type===1&&this.cell(e.x,e.y)){e.x=ox;e.y=oy;}
+      if(boom){e.gone=1;this.blast(e.x,e.y,EGGS[e.type].r);}}
+    Z.eggs=Z.eggs.filter(e=>!e.gone);
+    /* gold nuggets drift toward you when close */
+    for(const n of Z.nuggets){n.t+=dt;const dx=p.x-n.x,dy=p.y-n.y,d=Math.hypot(dx,dy);if(d<110){n.vx+=dx/d*500*dt;n.vy+=dy/d*500*dt;}n.vx*=1-1.5*dt;n.vy*=1-1.5*dt;n.x+=n.vx*dt;n.y+=n.vy*dt;
+      if(d<20){n.got=1;Z.gold++;addScore(50);if(AC)pluck(nHz(Z.gold%11),0,0,.05,.4);
+        if(Z.gold%25===0){G.lives++;say('EXTRA NAN II',1.4);}
+        if(!Z.open&&Z.gold>=Z.need){Z.open=true;say('THE HOLE WAKES',2,'FOLLOW THE ARROW');if(AC)for(let k=0;k<6;k++)pluck(nHz(k*2),k*.08,0,.05,.6);}}}
+    Z.nuggets=Z.nuggets.filter(n=>!n.got);
+    /* checkpoints: remember a calm spot */
+    Z.safeT+=dt;if(Z.safeT>1&&p.inv<=0&&!Z.junk.some(j=>Math.hypot(j.x-p.x,j.y-p.y)<150)&&!Z.pirates.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<300)){Z.safeT=0;Z.safe={x:p.x,y:p.y};}
+    /* camera */
+    const tx=clamp(p.x-W/2+p.vx*.35,0,Z.W-W),ty=clamp(p.y-(H+HUD)/2+p.vy*.35,-HUD,Z.H-H);Z.camX+=(tx-Z.camX)*Math.min(1,4*dt);Z.camY+=(ty-Z.camY)*Math.min(1,4*dt);
+    const dh=Math.hypot(p.x-Z.hole.x,p.y-Z.hole.y);
+    if(dh<44){if(Z.open)enterHole(Z.hole.x-Z.camX,Z.hole.y-Z.camY);else if(!Z.warned){Z.warned=1;say('SEALED',1.6,'NEEDS '+(Z.need-Z.gold)+' MORE GOLD');}}else Z.warned=0;},
+  draw(){const Z=G.Z,p=G.p,cx=Z.camX,cy=Z.camY;
+    const X0=Math.floor(cx/CS),X1=Math.floor((cx+W)/CS),Y0=Math.floor(cy/CS),Y1=Math.floor((cy+H)/CS);
+    ctx.lineWidth=2.5;ctx.lineCap='square';
+    for(let Y=Y0;Y<=Y1;Y++)for(let X=X0;X<=X1;X++){const c=this.cell(X*CS+1,Y*CS+1);if(!c)continue;const sx=X*CS-cx,sy=Y*CS-cy;
+      /* rock: outline only where it meets open cave; a speckle inside */
+      ctx.strokeStyle=C.rim;ctx.beginPath();
+      if(!this.cell(X*CS+1,Y*CS-CS+1)){ctx.moveTo(sx,sy);ctx.lineTo(sx+CS,sy);}
+      if(!this.cell(X*CS+1,Y*CS+CS+1)){ctx.moveTo(sx,sy+CS);ctx.lineTo(sx+CS,sy+CS);}
+      if(!this.cell(X*CS-CS+1,Y*CS+1)){ctx.moveTo(sx,sy);ctx.lineTo(sx,sy+CS);}
+      if(!this.cell(X*CS+CS+1,Y*CS+1)){ctx.moveTo(sx+CS,sy);ctx.lineTo(sx+CS,sy+CS);}
+      ctx.stroke();ctx.fillStyle=A(.07);ctx.fillRect(sx,sy,CS,CS);ctx.fillStyle=C.faint;for(let k=0;k<4;k++)ctx.fillRect(sx+((X*7+Y*3+k*11)%7)*5+4,sy+((X*3+Y*5+k*13)%7)*5+4,2,2);
+      {const mx=c===2?2:3,dmg=mx-Z.hp[Y*Z.cw+X];if(Z.hp[Y*Z.cw+X]<255&&dmg>0){ctx.strokeStyle=c===2?C.ink:C.dim;ctx.lineWidth=1.5;ctx.beginPath();
+        const both=dmg>=2||c===2;for(let k=-CS;k<CS;k+=9){ctx.moveTo(sx+Math.max(0,k),sy+Math.max(0,-k));ctx.lineTo(sx+Math.min(CS,CS+k),sy+Math.min(CS,CS-k));
+          if(both){ctx.moveTo(sx+CS-Math.max(0,k),sy+Math.max(0,-k));ctx.lineTo(sx+CS-Math.min(CS,CS+k),sy+Math.min(CS,CS-k));}}ctx.stroke();ctx.lineWidth=2.5;}}
+      if(c===2){ctx.strokeStyle=C.ink;ctx.lineWidth=2;for(let k=0;k<3;k++){const gx=sx+10+k*10,gy=sy+12+((k*7+X)%3)*7,tw=2.5+Math.sin(T*4+X+k)*1.2;
+          ctx.beginPath();ctx.moveTo(gx,gy-tw-2);ctx.lineTo(gx+tw,gy);ctx.lineTo(gx,gy+tw+2);ctx.lineTo(gx-tw,gy);ctx.closePath();ctx.stroke();}ctx.lineWidth=2.5;}}
+    drawHole(Z.hole.x-cx,Z.hole.y-cy,50,Z.open?1:.3);
+    for(const n of Z.nuggets){const x=n.x-cx,y=n.y-cy,s=3+Math.sin(n.t*6)*1;ctx.fillStyle=C.ink;ctx.beginPath();ctx.moveTo(x,y-s-1);ctx.lineTo(x+s,y);ctx.lineTo(x,y+s+1);ctx.lineTo(x-s,y);ctx.closePath();ctx.fill();}
+    for(const j of Z.junk){const x=j.x-cx,y=j.y-cy;if(x>-60&&x<W+60&&y>-60&&y<H+60)drawJunk(j,x,y);}
+    for(const pr of Z.pirates){const x=pr.x-cx,y=pr.y-cy;if(x<-40||x>W+40||y<-40||y>H+40)continue;drawSpeaker(x,y+14);
+      ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x-9,y-3);ctx.lineTo(x+9,y-7);ctx.stroke();ctx.fillStyle=C.ink;ctx.beginPath();ctx.arc(x-3,y-5,2.2,0,TAU);ctx.fill();
+      ctx.beginPath();ctx.moveTo(x+6,y-12);ctx.lineTo(x+6,y-26);ctx.lineTo(x+16,y-22);ctx.lineTo(x+6,y-19);ctx.stroke();}
+    ctx.fillStyle=C.ink;for(const s of Z.shots)ctx.fillRect(s.x-cx-2,s.y-cy-2,4,4);
+    for(const e of Z.eshots){ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x-cx,e.y-cy,4+Math.sin(T*20)*1.5,0,TAU);ctx.stroke();}
+    for(const e of Z.eggs)drawEgg(e.x-cx,e.y-cy,e.type,e);
+    drawB9(p.x-cx,p.y-cy,1,p.a,p.thrust);
+    /* HUD: gold, and an arrow toward the hole */
+    ctx.font='16px x';ctx.textAlign='left';ctx.fillStyle=C.ink;txt('GOLD '+Math.min(Z.gold,Z.need)+'/'+Z.need,20,HUD+26);drawEgg(28,HUD+48,Z.eggType,null);txt(EGGS[Z.eggType].name+' EGG',42,HUD+54);
+    const hx=Z.hole.x-cx,hy=Z.hole.y-cy;if(hx<0||hx>W||hy<HUD||hy>H){const a=Math.atan2(hy-(H+HUD)/2,hx-W/2),ax=W/2+Math.cos(a)*(W/2-40),ay=(H+HUD)/2+Math.sin(a)*((H-HUD)/2-30);
+      ctx.save();ctx.translate(ax,ay);ctx.rotate(a);ctx.globalAlpha=Z.open?.6+.4*Math.sin(T*6):.3;ctx.fillStyle=C.ink;ctx.beginPath();ctx.moveTo(14,0);ctx.lineTo(-8,-9);ctx.lineTo(-4,0);ctx.lineTo(-8,9);ctx.closePath();ctx.fill();ctx.restore();ctx.globalAlpha=1;}},
+  camX(){return G.Z.camX;},camY(){return G.Z.camY;}};
+const FLAP={
+  name:'THE GAUNTLET',hint:'DRIFT  STICK   A FLUTTER   HOLD A BOOST   X FIRE   B EGG',
+  /* spacey flutter: low gravity, additive flaps, free drift with inertia, wide gates, and things worth hitting */
+  PW:{slow:{name:'SLOW TIME',hue:'#3fd8ff',dur:7,glyph:'S'},shield:{name:'SHIELD',hue:'#ffb24a',dur:7,glyph:'O'},shrink:{name:'SHRINK',hue:'#ff7a1f',dur:8,glyph:'<'}},
+  init(){const lv=G.loop,Z={gates:[],items:[],camX:0,speed:165+lv*16,passed:0,planets:[]};const n=12+lv*2,gap=Math.max(140,195-lv*9),sp=470;
+    for(let i=0;i<n;i++){const x=720+i*sp,c=rnd(HUD+70+gap/2,H-50-gap/2);Z.gates.push({x,c,gap,ok:false,broke:{}});
+      /* between each pair of gates: an arc of bolts, and sometimes an orb or an extra life */
+      const mx=x+sp/2,my=rnd(HUD+80,H-80);
+      if(i%7===5)Z.items.push({x:mx,y:my,k:'life'});
+      else if(i%3===1){const ks=Object.keys(this.PW);Z.items.push({x:mx,y:my,k:ks[Math.floor(Math.random()*ks.length)]});}
+      else for(let k=0;k<4;k++)Z.items.push({x:mx-60+k*40,y:my-Math.sin(k/3*Math.PI)*30,k:'bolt'});}
+    for(let i=0;i<5;i++)Z.planets.push({x:rnd(0,W*3),y:rnd(HUD+60,H-60),r:rnd(14,46),ring:Math.random()<.5,d:rnd(.05,.18)});
+    Z.hole={x:720+n*sp+120,y:(H+HUD)/2};G.p={x:200,sx:200,y:(H+HUD)/2,vx:0,vy:0,inv:1.5,tilt:0,lift:0,wait:1,thrust:false};G.pw=null;PWHEX=null;refreshHue();return Z;},
+  power(k){const P=this.PW[k];G.pw={k,t:P.dur,dur:P.dur};PWHEX=P.hue;refreshHue();say(P.name,1.8);
+    if(AC){if(k==='slow'){tone(900,90,.9,'sine',.08);}else if(k==='shield'){tone(220,880,.5,'triangle',.06);}else{tone(1320,330,.5,'square',.03);}}},
+  endPower(){G.pw=null;PWHEX=null;refreshHue();if(AC)tone(660,330,.2,'triangle',.04);},
+  update(dt,inp){const Z=G.Z,p=G.p,pw=G.pw&&G.pw.k;
+    if(G.pw){G.pw.t-=dt;if(G.pw.t<=0)this.endPower();}
+    if(p.wait>0){p.wait-=dt;if(inp.jumpP||inp.upP)p.wait=0;else return;}
+    const slow=pw==='slow'?.5:1,wdt=dt*slow;
+    Z.camX+=Z.speed*wdt;
+    /* free drift across the screen, with inertia */
+    p.thrust=inp.x!==0;p.vx+=inp.x*520*dt;p.vx-=p.vx*.55*dt;p.vx=clamp(p.vx,-260,260);p.sx+=p.vx*dt;
+    if(p.sx<90){p.sx=90;p.vx=Math.abs(p.vx)*.3;}if(p.sx>640){p.sx=640;p.vx=-Math.abs(p.vx)*.3;}
+    p.x=Z.camX+p.sx;
+    if(p.thrust&&Math.random()<dt*50)G.trail.push({x:p.x-20,y:p.y-6+rnd(-2,2),vx:-rnd(60,120),vy:rnd(-10,10),life:.45,max:.45});
+    /* flutter: each tap adds lift rather than resetting it, so momentum carries */
+    if(inp.jumpP||inp.upP){p.vy=Math.max(Math.min(p.vy,60)-270,-420);p.lift=.28;sndJump();
+      for(let k=0;k<5;k++)G.trail.push({x:p.x+rnd(-8,8),y:p.y+16,vx:rnd(-30,30)-Z.speed*.3,vy:rnd(60,140),life:.4,max:.4});}
+    /* THE FLOAT (see gameplay.py): hold A after a flutter and the jets float him on, on the BOOST gauge */
+    if(p.fuel===undefined)p.fuel=1;p.jet=0;
+    if(inp.jump&&!inp.jumpP&&p.fuel>0&&p.vy>-90){p.vy+=(-50-p.vy)*Math.min(1,2.4*wdt);p.fuel=Math.max(0,p.fuel-dt*.4);p.jet=1;}else if(!inp.jump)p.fuel=Math.min(1,p.fuel+dt*.2);
+    p.lift=Math.max(p.jet?.1:0,p.lift-dt);if(!p.jet)p.vy+=720*wdt;p.vy=Math.min(p.vy,440);p.y+=p.vy*wdt;p.tilt=clamp(p.vy/900,-.35,.45)+p.vx/1400;
+    const rad=pw==='shrink'?7:14;
+    if(p.y<HUD+rad||p.y>H-rad){if(pw==='shield'){p.vy=-p.vy*.6;}else if(p.inv<=0)hurt(false);p.y=clamp(p.y,HUD+rad,H-rad);if(pw!=='shield')p.vy=0;}
+    for(const g of Z.gates){
+      if(Math.abs(g.x-p.x)<20+rad&&gateBlocks(g,p.y-rad,p.y+rad)){
+        if(pw==='shield'){const row=Math.floor(p.y/24);if(!g.broke[row]){g.broke[row]=1;kaboom(g.x,p.y);addScore(50,g.x,p.y-20);}}
+        else if(p.inv<=0)hurt(false);}
+      if(!g.ok&&p.x>g.x+30){g.ok=true;Z.passed++;addScore(50,p.x,p.y-30);if(AC)pluck(nHz(Z.passed%11),0,0,.05,.45);}}
+    /* NAN II's KIT: X fires ahead, B lobs a timer egg forward; both blast gaps in the gates */
+    kitInput(Z,inp,dt,p.x+22,p.y,Z.speed*slow+760,p.x+8,p.y+6,Z.speed*slow+170,-60);
+    for(const l of Z.lasers){l.x+=l.vx*dt;l.life-=dt;
+      for(const g of Z.gates)if(Math.abs(l.x-g.x)<20&&gateBlocks(g,l.y-1,l.y+1)){gateHole(g,l.y-38,l.y+38);l.life=0;kaboom(g.x,l.y);addScore(50,g.x,l.y-20);break;}}
+    Z.lasers=Z.lasers.filter(l=>l.life>0);
+    for(const e of Z.kegs){e.t-=dt;e.vy=Math.min(e.vy+480*dt,420);e.x+=e.vx*dt;e.y+=e.vy*dt;
+      const hitG=Z.gates.some(g=>Math.abs(e.x-g.x)<20&&gateBlocks(g,e.y-6,e.y+6));
+      if(e.t<=0||hitG||e.y>H-8){e.gone=1;kaboom(e.x,e.y,true);for(const g of Z.gates)if(Math.abs(g.x-e.x)<90){gateHole(g,e.y-70,e.y+70);addScore(50,g.x,e.y-30);}}}
+    Z.kegs=Z.kegs.filter(e=>!e.gone);
+    for(const it of Z.items){if(it.got)continue;const bob=Math.sin(T*2+it.x)*6;
+      if(Math.hypot(it.x-p.x,it.y+bob-p.y)<(it.k==='bolt'?20:26)+rad-14){it.got=1;
+        if(it.k==='bolt'){G.boltN++;addScore(25);sndBolt(G.boltN%8);burst(it.x,it.y,6,100);}
+        else if(it.k==='life'){G.lives++;say('EXTRA NAN II',1.4);burst(it.x,it.y,24,200);if(AC)for(let k=0;k<5;k++)pluck(nHz(k*2),k*.07,0,.06,.5);}
+        else{this.power(it.k);burst(it.x,it.y,24,220);G.rings.push({x:it.x,y:it.y,t:0});}}}
+    if(Math.hypot(p.x-Z.hole.x,p.y-Z.hole.y)<56){this.endPower();enterHole(Z.hole.x-Z.camX,Z.hole.y);}},
+  draw(){const Z=G.Z,p=G.p,cx=Z.camX,pw=G.pw&&G.pw.k;
+    /* distant planets drifting by */
+    for(const pl of Z.planets){const x=((pl.x-cx*pl.d)%(W*3)+W*3)%(W*3)-W*.5;ctx.strokeStyle=C.faint;ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,pl.y,pl.r,0,TAU);ctx.stroke();
+      if(pl.ring){ctx.beginPath();ctx.ellipse(x,pl.y,pl.r*1.8,pl.r*.35,-.3,0,TAU);ctx.stroke();}}
+    /* the edges of the corridor, drawn as a faint event horizon */
+    ctx.strokeStyle=C.dim;ctx.lineWidth=1.5;ctx.setLineDash([2,10]);ctx.lineDashOffset=cx%12;ctx.beginPath();ctx.moveTo(0,HUD+4);ctx.lineTo(W,HUD+4);ctx.moveTo(0,H-4);ctx.lineTo(W,H-4);ctx.stroke();ctx.setLineDash([]);
+    for(const g of Z.gates){const x=g.x-cx;if(x<-50||x>W+50)continue;const top=g.c-g.gap/2,bot=g.c+g.gap/2;
+      for(let y=top-24;y>HUD-24;y-=24)if(!g.broke[Math.floor((y+10)/24)]&&!gateOpen(g,y+4,y+16))drawToaster(x,y+20,0);for(let y=bot;y<H;y+=24)if(!g.broke[Math.floor((y+10)/24)]&&!gateOpen(g,y+4,y+16))drawToaster(x,y+20,0);
+      ctx.strokeStyle=C.dim;ctx.setLineDash([3,6]);ctx.beginPath();ctx.moveTo(x-30,top);ctx.lineTo(x+30,top);ctx.moveTo(x-30,bot);ctx.lineTo(x+30,bot);ctx.stroke();ctx.setLineDash([]);}
+    for(const it of Z.items){if(it.got)continue;const x=it.x-cx,y=it.y+Math.sin(T*2+it.x)*6;if(x<-40||x>W+40)continue;
+      if(it.k==='bolt')drawBolt(x,y);
+      else{const r=14+Math.sin(T*5)*2;ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.stroke();ctx.globalAlpha=.5;ctx.beginPath();ctx.arc(x,y,r+6+Math.sin(T*3)*3,0,TAU);ctx.stroke();ctx.globalAlpha=1;
+        if(it.k==='life'){ctx.save();ctx.translate(x,y);drawShip(0,0,1,false,.42,0);ctx.restore();}
+        else{ctx.font='16px x';ctx.textAlign='center';ctx.fillStyle=C.ink;txt(this.PW[it.k].glyph,x,y+7);}}}
+    kitDraw(Z,cx);
+    drawHole(Z.hole.x-cx,Z.hole.y,56);
+    if(p.wait>0){ctx.font='16px x';ctx.textAlign='center';ctx.fillStyle=C.ink;txt('FLUTTER TO START',W/2,H-60);}
+    const sc=pw==='shrink'?.55:1;ctx.save();ctx.translate(p.x-cx,p.y);ctx.scale(sc,sc);drawB9(0,0,1,p.tilt,p.thrust,p.lift>0?1:0);ctx.restore();
+    if(pw==='shield'){const r=24+Math.sin(T*9)*2;ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.globalAlpha=.5+.3*Math.sin(T*9);ctx.beginPath();ctx.arc(p.x-cx,p.y,r,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
+    ctx.fillStyle=C.dim;ctx.fillRect(20,HUD+14,120,6);ctx.fillStyle=C.ink;ctx.fillRect(20,HUD+14,120*(p.fuel===undefined?1:p.fuel),6);ctx.font='16px x';ctx.textAlign='left';txt('BOOST',150,HUD+22);
+    if(G.pw){const P=this.PW[G.pw.k],f=G.pw.t/G.pw.dur;if(!(G.pw.t<1.5&&Math.floor(T*8)%2)){ctx.font='16px x';ctx.textAlign='right';ctx.fillStyle=C.ink;txt(P.name,W-20,HUD+26);ctx.fillRect(W-20-160*f,HUD+34,160*f,4);}}},
+  camX(){return G.Z.camX;}};
+/* ---------------- NAN II's KIT: X fires, B lays an egg, in every zone (see gameplay.py) ---------------- */
+const KIT={FIRE_CD:.18,MAX_SHOTS:6,EGG_CD:.45,MAX_EGGS:3,FUSE:1.5};
+function kitInput(Z,inp,dt,fx,fy,fvx,ex,ey,evx,evy){if(!Z.lasers){Z.lasers=[];Z.kegs=[];Z.laserCd=0;Z.kegCd=0;}
+  Z.laserCd-=dt;Z.kegCd-=dt;
+  if((inp.fireP||(inp.fire&&Z.laserCd<=0))&&Z.lasers.length<KIT.MAX_SHOTS){Z.laserCd=KIT.FIRE_CD;Z.lasers.push({x:fx,y:fy,vx:fvx,life:.75});if(AC)defenderZap(0);}
+  if(inp.layP&&Z.kegCd<=0&&Z.kegs.length<KIT.MAX_EGGS){Z.kegCd=KIT.EGG_CD;Z.kegs.push({x:ex,y:ey,vx:evx,vy:evy,t:KIT.FUSE});if(AC){pluck(110,0,0,.08,.3,'sine');chirp(0,0,.03,300,160,.08,'triangle');}}}
+function kitDraw(Z,cx){if(!Z.lasers)return;ctx.strokeStyle=C.ink;ctx.lineWidth=3;
+  for(const l of Z.lasers){const x=l.x-cx,d=Math.sign(l.vx);ctx.beginPath();ctx.moveTo(x,l.y);ctx.lineTo(x-d*24,l.y);ctx.stroke();}
+  for(const e of Z.kegs)drawEgg(e.x-cx,e.y,1,e);}
+function junkBlast(Z,x,y,r){kaboom(x,y,true);
+  for(const e of Z.enemies)if(e.alive&&Math.hypot(e.x-x,e.y-12-y)<r){e.alive=0;kaboom(e.x,e.y-12);addScore(200,e.x,e.y-40);}
+  for(const t of Z.toasts)if(Math.hypot(t.x-x,t.y-y)<r)t.life=0;for(const w of Z.waves)if(Math.hypot(w.x-x,w.y-y)<r)w.life=0;}
+/* a Gauntlet gate's toasters, less the gaps NAN II's lasers and eggs have blasted in them */
+function gateHole(g,a,b){(g.holes=g.holes||[]).push([a,b]);}
+function gateOpen(g,a,b){return (g.holes||[]).some(h=>h[0]<=a&&h[1]>=b);}
+function gateBlocks(g,a,b){const top=g.c-g.gap/2,bot=g.c+g.gap/2;
+  return (a<top-2&&!gateOpen(g,a+2,Math.min(b,top)-2))||(b>bot+2&&!gateOpen(g,Math.max(a,bot)+2,b-2));}
+const ZONES=[JUNK,DRIFT,FLAP];
+
+/* ---------------- NAN II ---------------- */
+function drawB9(x,y,dir,rot,thrust=false,lift=0){const p=G.p;if(p&&p.inv>0&&Math.floor(T*12)%2&&G.state==='play')return;
+  ctx.save();ctx.translate(x,y);ctx.rotate(rot||0);drawShip(0,0,dir,thrust||(p&&p.thrust),1,lift||(p&&p.lift)||0);ctx.restore();
+  if(p&&(thrust||p.thrust)&&Math.random()<.6&&G.zone===0){G.trail.push({x:x+(ZONES[G.zone].camX())-dir*Math.cos(rot||0)*20,y:y-6-Math.sin(rot||0)*20*dir,vx:-dir*rnd(40,100),vy:rnd(-12,12),life:.4,max:.4});}}
+
+/* ---------------- game flow ---------------- */
+
+/* THE MANUAL (see gameplay.py): what is on the screen and what the buttons do */
+const MAN={open:false,page:0};
+function manOpen(){MAN.open=true;MAN.page=0;if(AC)tone(660,880,.06,'square',.03);}
+function manClose(){MAN.open=false;if(AC)tone(880,660,.06,'square',.03);}
+function manInput(next,back,close){if(close){manClose();return;}
+  if(next){if(MAN.page<MAN_PAGES.length-1){MAN.page++;if(AC)tone(700,700,.04,'square',.03);}else manClose();}
+  else if(back&&MAN.page>0){MAN.page--;if(AC)tone(700,700,.04,'square',.03);}}
+function manWrap(s,max){const out=[];let line='';for(const w of s.split(' ')){if(line&&(line+' '+w).length>max){out.push(line);line=w;}else line=line?line+' '+w:w;}if(line)out.push(line);return out;}
+function manDraw(){const P=MAN_PAGES[MAN.page];ctx.save();ctx.globalAlpha=1;ctx.fillStyle='rgba(0,0,0,.96)';ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center';ctx.fillStyle=C.dim;ctx.font='13px x';txt('MANUAL   '+(MAN.page+1)+' / '+MAN_PAGES.length,W/2,40);
+  ctx.fillStyle=C.ink;ctx.font='28px x';txt(P.t,W/2,82);ctx.font='16px x';let y=126;
+  for(const row of P.r){if(typeof row==='string'){ctx.textAlign='center';ctx.fillStyle=C.ink;for(const l of manWrap(row,56)){txt(l,W/2,y);y+=24;}y+=8;continue;}
+    ctx.textAlign='right';ctx.fillStyle=C.ink;txt(row[0],296,y);ctx.textAlign='left';ctx.fillStyle=C.dim;for(const l of manWrap(row[1],40)){txt(l,318,y);y+=24;}y+=8;}
+  ctx.textAlign='center';ctx.fillStyle=C.dim;ctx.font='13px x';txt(MAN.page<MAN_PAGES.length-1?'LEFT RIGHT TURN THE PAGE     A NEXT     B CLOSE':'LEFT GOES BACK     A OR B CLOSE',W/2,H-20);ctx.restore();}
+const MAN_PAGES=[
+ {t:'NAN II THROUGH THE BLACK HOLE',r:['The smart appliances have taken over the other side.','Each world ends in a black hole: fall in to reach the next. The Journey plays all three in turn, round and round, or pick one world on the title screen.','Top of the screen: your score, the world, and your B9s.']},
+ {t:'THE JUNKYARD',r:[['DRIVING','NAN II drives, jumps and floats on his foot jets. The BOOST gauge refills on the ground.'],['BOLTS','25 points each'],['APPLIANCES','stomp on them or shoot them. Toasters throw toast, speakers send sound waves.'],['PITS','falling in costs a NAN II'],['THE HOLE','at the far end']]},
+ {t:'THE DRIFT',r:[['THE CAVE','turn and thrust. Bumping rock hard hurts'],['ROCK','shoot it away: 3 hits, gold rock 2. Gold spills nuggets.'],['GOLD','collect enough (top left) and the hole wakes. The arrow points to it.'],['PIRATES','chase NAN II and shoot'],['JUNK','breaks into smaller junk'],['EGGS','drifter follows your path, timer ticks then bursts, seeker hunts the nearest enemy. Y switches.']]},
+ {t:'THE GAUNTLET',r:[['FLYING','tap A to flutter up, hold it to float. Left and right drift.'],['GATES','fly through the gap, or blast one with a laser or an egg'],['EDGES','the top and bottom of the corridor hurt'],['ORBS','slow time, shield, shrink or an extra NAN II'],['BOLTS','25 points each']]},
+ {t:'THE NAN II CONTROLLER',r:[['STICK','drive, turn or drift'],['A','jump. Hold it in the air to boost. In the Drift, thrust'],['X OR RB','fire'],['B OR LB','lay an egg'],['Y','switch eggs in the Drift'],['START','pause: volume, music and this manual'],['KEYBOARD','arrows, space jumps, J fires, T lays an egg, enter pauses']]}];
+const PICKS=[['THE JOURNEY  ALL THREE',null],['THE JUNKYARD',0],['THE DRIFT',1],['THE GAUNTLET',2],['MANUAL','manual'],['EXIT GAME','exit']];let SEL=0;
+function newGame(pick=SEL){G={only:PICKS[pick][1],state:'play',score:0,lives:3,nextLife:15000,loop:0,zone:0,parts:[],pops:[],rings:[],trail:[],dust:[],msg:'',sub:'',msgT:0,shake:0,hitStop:0,alarmT:0,flash:0,trans:null,Z:null,p:null,boltN:0};
+  startZone(G.only??0);}
+function startZone(z){G.zone=z;G.Z=ZONES[z].init();G.trail=[];G.dust=[];G.parts=[];G.rings=[];const nm=ZONES[z].name;say((G.loop?'LOOP '+(G.loop+1)+'  ':'')+nm,3.2,ZONES[z].hint);}
+function enterHole(sx,sy){if(G.state!=='play')return;G.state='trans';G.trans={t:0,sx,sy,px:null};if(AC){noiseHit(0,0,.3,1.6,6000,60);tone(900,40,1.6,'sine',.08);tone(1200,60,1.6,'triangle',.04);}addScore(1000);}
+function hurt(fell){if(G.state!=='play')return;const p=G.p;G.lives--;G.alarmT=1.2;G.shake=10;G.hitStop=.08;sndHurt();burst(p.x,p.y-14,24,260);
+  if(G.lives<=0){G.state='over';G.overT=0;if(G.score>HIGH){HIGH=G.score;try{localStorage.setItem('b9bhHigh',HIGH);}catch(e){}}return;}
+  p.inv=2;if(G.zone===0){const Z=G.Z;if(fell){p.x=Z.safe.x;p.y=Z.safe.y-2;}p.vx=-p.dir*120;p.vy=fell?0:-300;}
+  else if(G.zone===1){const Z=G.Z;p.x=Z.safe.x;p.y=Z.safe.y;p.vx=p.vy=0;Z.eshots=[];}
+  else{const Z=G.Z,next=Z.gates.find(g=>g.x>p.x-20);p.y=next?next.c:(H+HUD)/2;p.vy=0;p.vx=0;p.wait=.9;if(G.pw)FLAP.endPower();}}
+
+function update(dt,inp){
+  if(inp.colorP)setPhos(phos+1);
+  if(MAN.open){manInput(inp.rightP||inp.jumpP||inp.fireP,inp.leftP,inp.backP||inp.startP);return;}
+  if(!G){if(inp.upP){SEL=(SEL+PICKS.length-1)%PICKS.length;if(AC)chirp(0,0,.03,600,700,.05);}if(inp.downP){SEL=(SEL+1)%PICKS.length;if(AC)chirp(0,0,.03,600,700,.05);}if(inp.startP||inp.jumpP){if(PICKS[SEL][1]==='exit')exitGame();else if(PICKS[SEL][1]==='manual')manOpen();else newGame(SEL);}return;}
+  if(G.state==='over'){G.overT+=dt;if(G.overT>1&&(inp.startP||inp.jumpP))G=null;return;}
+  if(inp.startP&&(G.state==='play'||G.state==='paused')){G.state=G.state==='paused'?'play':'paused';G.pm=0;return;}
+  if(G.state==='paused'){pauseInput(inp);return;}
+  G.shake=Math.max(0,G.shake-dt*28);G.msgT-=dt;G.alarmT=Math.max(0,G.alarmT-dt);G.flash=Math.max(0,G.flash-dt*2);
+  if(G.hitStop>0){G.hitStop-=dt;return;}
+  if(G.state==='trans'){const tr=G.trans;tr.t+=dt;if(tr.t>1.8){G.state='play';G.flash=1;let z;if(G.only!=null){z=G.only;G.loop++;}else{z=G.zone+1;if(z>=ZONES.length){z=0;G.loop++;}}startZone(z);}return;}
+  const p=G.p;p.inv=Math.max(0,(p.inv||0)-dt);
+  ZONES[G.zone].update(dt,inp);
+  if(AC&&G.state==='play')engine(true,p.thrust?1:0,p.lift?1:0,Math.abs(p.vx||0));
+  for(const q of G.parts){q.x+=q.vx*dt;q.y+=q.vy*dt;q.vx*=1-1.5*dt;q.vy*=1-1.5*dt;q.life-=dt;}G.parts=G.parts.filter(q=>q.life>0);
+  for(const q of G.trail){q.x+=q.vx*dt;q.y+=q.vy*dt;q.life-=dt;}G.trail=G.trail.filter(q=>q.life>0);
+  for(const q of G.dust){q.x+=q.vx*dt;q.y+=q.vy*dt;q.vy+=60*dt;q.life-=dt;}G.dust=G.dust.filter(q=>q.life>0);
+  for(const r of G.rings)r.t+=dt;G.rings=G.rings.filter(r=>r.t<.35);
+  for(const q of G.pops){q.t-=dt;q.y-=22*dt;}G.pops=G.pops.filter(q=>q.t>0);}
+
+/* ---------------- drawing ---------------- */
+const stars=[...Array(120)].map(()=>({x:rnd(0,W),y:rnd(HUD,H),r:Math.random()<.15?2:1,b:rnd(.25,.9),d:rnd(.1,.5)}));
+function draw(){ctx.clearRect(0,0,W,H);const cx=G&&G.Z?ZONES[G.zone].camX():T*30,cy=G&&G.Z&&ZONES[G.zone].camY?ZONES[G.zone].camY():0;
+  for(const s of stars){const x=((s.x-cx*s.d)%W+W)%W,sy=HUD+((s.y-HUD-cy*s.d)%(H-HUD)+(H-HUD))%(H-HUD);ctx.globalAlpha=s.b*(.75+.25*Math.sin(T*2+s.x));ctx.fillStyle=C.ink;ctx.fillRect(x,sy,s.r,s.r);}ctx.globalAlpha=1;
+  if(!G){titleScreen();return;}
+  const wx=x=>x-cx,wy=y=>y-cy;
+  if(G.state==='trans'){const tr=G.trans,u=Math.min(1,tr.t/1.6);drawHole(tr.sx,tr.sy,50+u*300,1);
+    ctx.save();ctx.translate(tr.sx+(1-u)*0,tr.sy);ctx.rotate(u*18);ctx.scale(1-u*.95,1-u*.95);drawShip(0,0,1,true,1,1);ctx.restore();
+    if(u>.7){ctx.fillStyle=A((u-.7)/.3);ctx.fillRect(0,0,W,H);}drawHud();return;}
+  ZONES[G.zone].draw();
+  for(const q of G.trail){ctx.globalAlpha=Math.max(0,q.life/q.max);ctx.fillStyle=C.ink;ctx.fillRect(wx(q.x)-1,wy(q.y)-1,2,2);}
+  for(const q of G.dust){ctx.globalAlpha=Math.max(0,q.life/q.max)*.8;ctx.fillStyle=C.dim;ctx.fillRect(wx(q.x)-1.5,wy(q.y)-1.5,3,3);}
+  for(const q of G.parts){ctx.globalAlpha=Math.max(0,Math.min(1,q.life));ctx.fillStyle=q.col;ctx.fillRect(wx(q.x),wy(q.y),2.5,2.5);}
+  ctx.strokeStyle=C.ink;for(const r of G.rings){ctx.globalAlpha=1-r.t/.35;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(wx(r.x),wy(r.y),8+r.t*260,0,TAU);ctx.stroke();}
+  ctx.globalAlpha=1;ctx.font='16px x';ctx.textAlign='center';for(const q of G.pops){ctx.globalAlpha=Math.min(1,q.t);ctx.fillStyle=C.ink;txt(q.txt,wx(q.x),wy(q.y));}ctx.globalAlpha=1;
+  drawHud();
+  if(G.msgT>0){ctx.globalAlpha=Math.min(1,G.msgT*2);ctx.fillStyle=C.ink;ctx.textAlign='center';ctx.font='32px x';txt(G.msg,W/2,170);if(G.sub){ctx.font='16px x';ctx.fillStyle=C.dim;txt(G.sub,W/2,205);}ctx.globalAlpha=1;}
+  if(G.flash>0){ctx.fillStyle=A(G.flash*.5);ctx.fillRect(0,0,W,H);}
+  if(G.state==='paused')overlay('PAUSED',[...PAUSE_MENU.map(m=>m==='MUSIC'?'MUSIC '+(B9MUS.on?B9MUS.level:'OFF'):m==='VOLUME'?'VOLUME '+(B9VOL.level||'OFF'):m).map((m,i)=>i===(G.pm||0)?'>  '+m+'  <':m),'UP DOWN   LEFT RIGHT CHANGE   A SELECT   START RESUME']);
+  if(G.state==='over')overlay('GAME OVER',['SCORE '+G.score+'    BEST '+HIGH,'',G.overT>1?'PRESS START FOR THE MENU':'']);}
+function drawHud(){ctx.clearRect(0,0,W,HUD);ctx.fillStyle=C.rim;ctx.fillRect(0,HUD-2,W,2);ctx.fillStyle=C.ink;ctx.textAlign='left';ctx.font='20px x';txt(G.score,20,28);
+  ctx.textAlign='center';ctx.font='16px x';ctx.fillStyle=C.dim;txt(ZONES[G.zone].name+(G.loop?'  LOOP '+(G.loop+1):''),W/2,26);
+  for(let i=0;i<Math.min(G.lives,6);i++){ctx.save();ctx.translate(W-30-i*34,22);drawShip(0,0,-1,false,.5,0);ctx.restore();}}
+function overlay(t,lines){ctx.clearRect(0,HUD,W,H-HUD);ctx.textAlign='center';ctx.fillStyle=C.ink;ctx.font='48px x';txt(t,W/2,240);ctx.font='16px x';lines.forEach((l,i)=>txt(l,W/2,300+i*32));}
+function titleScreen(){ctx.textAlign='center';ctx.fillStyle=C.ink;ctx.font='52px x';txt('NAN II THROUGH',W/2,110);txt('THE BLACK HOLE',W/2,172);
+  drawHole(W/2+170,262,34);ctx.save();ctx.translate(W/2-150,262);ctx.rotate(Math.sin(T*2)*.15);drawShip(0,0,1,true,1.5,1);ctx.restore();
+  drawVac(W/2-10,282,-1);drawToaster(W/2+50,282,Math.max(0,Math.sin(T*3)));drawSpeaker(W/2+100,282+Math.sin(T*2)*6);
+  ctx.font='16px x';ctx.fillStyle=C.dim;txt('THE SMART APPLIANCES HAVE TAKEN OVER THE OTHER SIDE',W/2,330);
+  ctx.font='20px x';PICKS.forEach(([n],i)=>{const on=i===SEL;ctx.fillStyle=on?C.ink:C.dim;txt((on?'> ':'  ')+n+(on?' <':'  '),W/2,360+i*25);});
+  /* the chosen game's controls, right on the title screen */
+  const pk=PICKS[SEL][1],ctl=pk==='exit'?'BACK TO THE GAMES SHELF':pk==='manual'?'WHAT YOU SEE, AND WHAT THE BUTTONS DO':pk==null?'EACH BLACK HOLE CHANGES THE GAME AND ITS CONTROLS':ZONES[pk].hint;
+  ctx.font=(ctl.length>52?'13px x':'16px x');ctx.fillStyle=C.ink;txt(ctl,W/2,506);
+  ctx.font='12px x';ctx.fillStyle=C.dim;txt('UP AND DOWN TO CHOOSE   START OR SPACE TO PLAY   PAUSE  ENTER   COLOR  C   MUSIC  M'+(HIGH?'   BEST '+HIGH:''),W/2,530);}
+
+/* ---------------- loop ---------------- */
+let last=performance.now();
+function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;T+=dt;const inp=readInput();update(dt,inp);
+  if(AC&&(!G||G.state!=='play'))engine(false,0,0,0);draw();if(MAN.open)manDraw();blit();requestAnimationFrame(frame);}
+/* THE NAN II THEME on the title screen: start the sound as the page opens. NAN II's screen
+   lets a page play without a tap; an ordinary browser waits for the first key. */
+audio();
+requestAnimationFrame(frame);
+
+</script>
+</body>
+</html>

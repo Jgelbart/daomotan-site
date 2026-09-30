@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script>window.DAOMOTAN_ARCADE = true;</script>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NAN II Saves The Humans</title>
+<style>
+:root{--bg:#000;--ink:#fff2c7;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#000;--ink:#fff2c7;}}
+:root[data-theme="dark"]{--bg:#000;--ink:#fff2c7;}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px);}
+body{height:100%;margin:0;background:var(--bg);color:var(--ink);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+canvas{display:block;outline:none;}
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0" aria-label="NAN II Saves The Humans, a side-scrolling shooter. Press Enter or Start to play."></canvas>
+<script>
+const W=960,H=540,TOP=64,WW=4800,TAU=Math.PI*2;
+const cv=document.getElementById('c'),out=cv.getContext('2d');
+const buf=document.createElement('canvas');buf.width=480;buf.height=270;const ctx=buf.getContext('2d');ctx.setTransform(.5,0,0,.5,0,0);
+const glow=document.createElement('canvas');glow.width=160;glow.height=90;const gctx=glow.getContext('2d');
+function fit(){const bw=document.body.clientWidth,bh=document.body.clientHeight;const S=Math.min(bw/W,bh/H);const d=window.devicePixelRatio||1;
+  cv.style.width=W*S+'px';cv.style.height=H*S+'px';cv.width=Math.round(W*S*d);cv.height=Math.round(H*S*d);out.setTransform(S*d,0,0,S*d,0,0);}
+addEventListener('resize',fit);fit();
+
+const FT='"Press Start 2P","Courier New",monospace',FB=FT;
+/* ================= NAN II FACE SETTINGS HANDLES =================
+   Every look-and-feel dial lives in FXS. NAN II's settings can drive it three ways:
+   1. URL:          colony-guard.html?hue=amber&bloom=40&scanlines=1&afterglow=30
+   2. postMessage:  iframe.contentWindow.postMessage({type:'b9-settings',settings:{hue:'cyan',bloom:60}},'*')
+   3. JavaScript:   window.B9FX.set({flicker:0}) and window.B9FX.get()
+   Changes are remembered on this device. */
+const HUES={amber:'#ffb24a',orange:'#ff7a1f',bone:'#f2ecdd',green:'#39ff88',cyan:'#3fd8ff',red:'#ff4a4a'};
+const HUE_NAMES=Object.keys(HUES);
+const ALARM={red:'#ff3030',cyan:'#30e0ff'};
+const FXS={hue:'green',bloom:40,scanlines:true,vignette:true,afterglow:30,flicker:10,breathing:false,alarmBleed:true};
+const toBool=v=>v===true||v===1||v==='1'||v==='true'||v==='on';
+function applyFX(o,persist=true){if(!o||typeof o!=='object')return;
+  for(const k of Object.keys(FXS))if(k in o){const v=o[k];
+    if(k==='hue'){const n=String(v).toLowerCase();if(HUES[n])FXS.hue=n;else if(/^#?[0-9a-f]{6}$/i.test(n)){FXS.hue='custom';HUES.custom=n[0]==='#'?n:'#'+n;}}
+    else if(typeof FXS[k]==='boolean')FXS[k]=toBool(v);
+    else{const x=+v;if(isFinite(x))FXS[k]=Math.max(0,Math.min(100,x));}}
+  if(persist)try{localStorage.setItem('b9fx',JSON.stringify(FXS));}catch(e){}
+  refreshHue();}
+const hexRGB=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+let RGB=[57,255,136];
+const C={};const A=a=>`rgba(${RGB.join(',')},${a})`;
+var PWHEX=null;  /* colour override while a bird power is active */
+function refreshHue(hex){RGB=hexRGB(hex||PWHEX||HUES[FXS.hue]||HUES.green);
+  Object.assign(C,{ink:A(1),ship:A(1),lander:A(1),mutant:A(1),ground:A(1),rim:A(1),dim:A(.5),faint:A(.22),beam:A(.14)});}
+let phos=0;
+function setPhos(i){phos=((i%HUE_NAMES.length)+HUE_NAMES.length)%HUE_NAMES.length;applyFX({hue:HUE_NAMES[phos]});}
+try{applyFX(JSON.parse(localStorage.getItem('b9fx')||'{}'),false);}catch(e){}
+{const q={};new URLSearchParams(location.search).forEach((v,k)=>q[k]=v);applyFX(q,false);}
+refreshHue();phos=Math.max(0,HUE_NAMES.indexOf(FXS.hue));
+addEventListener('message',e=>{const d=e.data;if(d&&d.type==='b9-settings')applyFX(d.settings);});
+window.B9FX={get:()=>({...FXS}),set:o=>applyFX(o),hues:HUE_NAMES};
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const wrap=x=>((x%WW)+WW)%WW;
+const wd=(a,b)=>{let d=wrap(a-b);return d>WW/2?d-WW:d;};
+const P1=rnd(0,TAU),P2=rnd(0,TAU),P3=rnd(0,TAU);
+const groundY=x=>492+16*Math.sin(TAU*3*x/WW+P1)+11*Math.sin(TAU*8*x/WW+P2)+6*Math.sin(TAU*19*x/WW+P3);
+const stars=[];for(let i=0;i<140;i++)stars.push({x:rnd(0,W),y:rnd(TOP+4,450),r:Math.random()<.15?2:1,b:rnd(.25,.9)});
+
+const SET={fric:5,thrust:5,laser:0,mus:3};try{Object.assign(SET,JSON.parse(localStorage.getItem('colonyGuardSet')||'{}'));}catch(e){}
+if(!SET.v2){SET.mus=3;SET.v2=1;}
+if(!SET.v3){SET.laser=1;SET.v3=1;}  /* start everyone on the 1981 laser */
+function saveSet(){try{localStorage.setItem('colonyGuardSet',JSON.stringify(SET));}catch(e){}}
+let HIGH=0;try{HIGH=+localStorage.getItem('colonyGuardHigh')||0;}catch(e){}
+function saveHigh(){if(G.score>HIGH){HIGH=G.score;try{localStorage.setItem('colonyGuardHigh',HIGH);}catch(e){}}}
+
+/* ---------- sound ---------- */
+let AC=null,noiseBuf=null,MASTER=null;
+function audio(){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();{const hc=AC.createBiquadFilter();hc.type='lowpass';hc.frequency.value=7000;hc.Q.value=.5;const lim=AC.createDynamicsCompressor();lim.threshold.value=-14;lim.knee.value=10;lim.ratio.value=6;lim.attack.value=.004;lim.release.value=.2;const mg=AC.createGain();B9VOL.trim(mg,.5);/* .5 at VOLUME 10: .9 clipped NAN II's speaker bar (see gameplay.py) */hc.connect(lim);lim.connect(mg);mg.connect(AC.destination);MASTER=hc;}T0=AC.currentTime;setupEngine();}catch(e){}}if(AC&&AC.state==='suspended')AC.resume();}
+function noise(){if(!noiseBuf){noiseBuf=AC.createBuffer(1,AC.sampleRate,AC.sampleRate);const d=noiseBuf.getChannelData(0);let h=0;for(let i=0;i<d.length;i++){if(i%6===0)h=Math.random()*2-1;d[i]=h;}}return noiseBuf;}
+/* retro jet: stepped (crunchy) noise through a band-pass plus a low square buzz */
+/* ENGINE: a warm binaural hum instead of a buzz.
+   Left ear 110 Hz (the A that every scale here starts on), right ear a few Hz higher:
+   on headphones the brain hears a slow, soothing pulse between them (a binaural beat).
+   Thrust fades in a perfect fifth above and a soft breath of filtered brown noise; speed opens the filter. */
+let ENG=null;
+function brown(){const len=AC.sampleRate*2,b=AC.createBuffer(1,len,AC.sampleRate),d=b.getChannelData(0);let x=0;
+  for(let i=0;i<len;i++){x=(x+.02*(Math.random()*2-1))/1.02;d[i]=x*3.5;}return b;}
+function setupEngine(){const t=AC.currentTime,m=AC.createChannelMerger(2),bus=AC.createGain();bus.gain.value=0;m.connect(bus);bus.connect(MASTER);
+  const mk=(f,ch,type='sine')=>{const o=AC.createOscillator();o.type=type;o.frequency.value=f;const g=AC.createGain();o.connect(g);g.connect(m,0,ch);o.start(t);return {o,g};};
+  const L=mk(110,0),R=mk(116,1),L5=mk(165,0),R5=mk(171,1),sub=mk(55,0,'triangle'),subR=mk(55,1,'triangle');
+  L.g.gain.value=R.g.gain.value=.5;sub.g.gain.value=subR.g.gain.value=.18;L5.g.gain.value=R5.g.gain.value=0;
+  const n=AC.createBufferSource();n.buffer=brown();n.loop=true;const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=300;lp.Q.value=.7;
+  const ng=AC.createGain();ng.gain.value=0;n.connect(lp);lp.connect(ng);ng.connect(m,0,0);ng.connect(m,0,1);n.start(t);
+  ENG={bus,L,R,L5,R5,lp,ng};}
+function engine(on,thrust,lift,speed){if(!ENG)return;const t=AC.currentTime,k=on?1:0,s=Math.min(1,speed/560),bt=6;
+  ENG.bus.gain.setTargetAtTime(k*(.05+.05*thrust+.02*lift),t,.25);
+  const f=110*(1+.06*s);ENG.L.o.frequency.setTargetAtTime(f,t,.3);ENG.R.o.frequency.setTargetAtTime(f+bt,t,.3);
+  ENG.L5.o.frequency.setTargetAtTime(f*1.5,t,.3);ENG.R5.o.frequency.setTargetAtTime(f*1.5+bt,t,.3);
+  ENG.L5.g.gain.setTargetAtTime(.32*thrust,t,.2);ENG.R5.g.gain.setTargetAtTime(.32*thrust,t,.2);
+  ENG.lp.frequency.setTargetAtTime(250+900*s+500*lift,t,.2);ENG.ng.gain.setTargetAtTime(.25*thrust+.2*lift,t,.2);}
+/* ---- Atari 2600 TIA sound chip emulation: real poly counters and distortion modes ---- */
+const TIA_HZ=31400;
+function tiaRender(seq){const per=Math.round(TIA_HZ/60),buf=AC.createBuffer(1,seq.length*per,TIA_HZ),d=buf.getChannelData(0);
+  let p4=15,p5=31,p9=511,div=0,d31=0,d3=0,out=0,i=0;
+  const s4=()=>{const b=(p4^(p4>>1))&1;p4=(p4>>1)|(b<<3);},s5=()=>{const b=(p5^(p5>>2))&1;p5=(p5>>1)|(b<<4);},s9=()=>{const b=(p9^(p9>>4))&1;p9=(p9>>1)|(b<<8);};
+  for(const [c,f,v] of seq)for(let t=0;t<per;t++,i++){
+    if(++div>f){div=0;
+      switch(c){case 1:s4();out=p4&1;break;
+        case 2:d31=(d31+1)%31;if(d31===0||d31===18)s4();out=p4&1;break;
+        case 3:s5();if(p5&1)s4();out=p4&1;break;
+        case 4:case 5:out^=1;break;
+        case 6:case 10:d31=(d31+1)%31;out=d31<18?1:0;break;
+        case 7:case 9:s5();out=p5&1;break;
+        case 8:s9();out=p9&1;break;
+        case 12:case 13:d3=(d3+1)%3;if(!d3)out^=1;break;
+        case 14:d31=(d31+1)%31;if(d31===0||d31===18){d3=(d3+1)%3;if(!d3)out^=1;}break;
+        case 15:s5();if(p5&1){d3=(d3+1)%3;if(!d3)out^=1;}break;
+        default:out=1;}}
+    d[i]=(out?1:-1)*v/15*.22;}
+  return buf;}
+/* laser presets, one row per 1/60 s frame: [distortion, pitch divider, volume] */
+const sweep=(c,f0,f1,n,v0=15,v1=4)=>Array.from({length:n},(_,k)=>[c,Math.round(f0+(f1-f0)*k/(n-1)),Math.round(v0+(v1-v0)*k/(n-1))]);
+/* level every laser voice to the same loudness: scale so the first 150 ms hit a target RMS
+   (matched to the soft Space laser; noisy/buzzy voices sit slightly lower because they read louder) */
+function levelBuf(b,target){const d=b.getChannelData(0),sr=b.sampleRate,n=Math.min(d.length,Math.floor(sr*.15));let m=0;for(let i=0;i<n;i++)m+=d[i];m/=n;
+  let e=0;for(let i=0;i<n;i++){const x=d[i]-m;e+=x*x;}const r=Math.sqrt(e/n)||1,k=target/r;for(let i=0;i<d.length;i++)d[i]=(d[i]-m)*k;return b;}
+const tiaCache={};
+function tiaPlay(key,make){if(!AC)return;if(!tiaCache[key])tiaCache[key]=levelBuf(tiaRender(make()),.015);const s=AC.createBufferSource();s.buffer=tiaCache[key];s.connect(MASTER);s.start();}
+/* laser voices: 'Space' is the soft synth; the rest are Atari chip presets [distortion, from, to, frames, vol from, vol to] */
+const LASERS=[['Space'],['1981'],['Hiss',8,0,14,12],['Pew',4,1,26,13],['Buzz',1,1,18,13],['Rasp',15,0,12,12],['Ray',12,31,4,14,12,6]];
+/* altitude picks the note: A minor pentatonic over two octaves, higher on screen = higher note */
+/* every wave is named for a scale, starting sweet and getting stranger */
+const SCALES=[['Minor Pentatonic',[0,3,5,7,10]],['Major Pentatonic',[0,2,4,7,9]],['Ionian',[0,2,4,5,7,9,11]],['Dorian',[0,2,3,5,7,9,10]],
+  ['Mixolydian',[0,2,4,5,7,9,10]],['Aeolian',[0,2,3,5,7,8,10]],['Lydian',[0,2,4,6,7,9,11]],['Phrygian',[0,1,3,5,7,8,10]],['Blues',[0,3,5,6,7,10]],
+  ['Harmonic Minor',[0,2,3,5,7,8,11]],['Hirajoshi',[0,2,3,7,8]],['Whole Tone',[0,2,4,6,8,10]],['Phrygian Dominant',[0,1,4,5,7,8,10]],
+  ['Hungarian Minor',[0,2,3,6,7,8,11]],['Double Harmonic',[0,1,4,5,7,8,11]],['Diminished',[0,2,3,5,6,8,9,11]],['Locrian',[0,1,3,5,6,8,10]]];
+const buildScale=iv=>[...iv,...iv.map(x=>x+12),24];
+let SCALE=buildScale(SCALES[0][1]);
+const scaleFor=w=>SCALES[(w-1)%SCALES.length];
+function noteFor(y){const fr=Math.max(0,Math.min(1,(470-y)/(470-(TOP+16))));return Math.round(fr*(SCALE.length-1));}
+/* shared space FX: filtered echo plus a soft generated reverb */
+let FX=null;
+function fxBus(){if(FX)return FX;const inp=AC.createGain();
+  const dly=AC.createDelay(1);dly.delayTime.value=.24;const fb=AC.createGain();fb.gain.value=.3;const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1400;
+  inp.connect(dly);dly.connect(lp);lp.connect(fb);fb.connect(dly);const wet=AC.createGain();wet.gain.value=.35;lp.connect(wet);wet.connect(MASTER);
+  const len=Math.floor(AC.sampleRate*2.2),ir=AC.createBuffer(2,len,AC.sampleRate);
+  for(let ch=0;ch<2;ch++){const d=ir.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3);}
+  const cv=AC.createConvolver();cv.buffer=ir;const rv=AC.createGain();rv.gain.value=.3;inp.connect(cv);cv.connect(rv);rv.connect(MASTER);
+  return FX=inp;}
+function spaceZap(n,when=0,pan=0){const t=AC.currentTime+when,f=ROOT()*Math.pow(2,SCALE[n]/12)*Math.pow(2,rnd(-4,4)/1200),v=rnd(.85,1);
+  const o1=AC.createOscillator(),o2=AC.createOscillator(),lp=AC.createBiquadFilter(),g=AC.createGain(),g2=AC.createGain(),pn=AC.createStereoPanner?AC.createStereoPanner():null;
+  o1.type='sine';o2.type='sine';
+  o1.frequency.setValueAtTime(f*1.5,t);o1.frequency.exponentialRampToValueAtTime(f,t+.045);
+  o2.frequency.setValueAtTime(f*3,t);o2.frequency.exponentialRampToValueAtTime(f*2.003,t+.045);
+  g2.gain.setValueAtTime(.3,t);g2.gain.exponentialRampToValueAtTime(.02,t+.12);
+  lp.type='lowpass';lp.Q.value=.5;lp.frequency.setValueAtTime(2400,t);lp.frequency.exponentialRampToValueAtTime(900,t+.25);
+  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.075*v,t+.012);g.gain.exponentialRampToValueAtTime(.0001,t+.28);
+  o1.connect(lp);o2.connect(g2);g2.connect(lp);lp.connect(g);
+  let last=g;if(pn){pn.pan.value=Math.max(-.8,Math.min(.8,pan));g.connect(pn);last=pn;}
+  const dry=AC.createGain();dry.gain.value=.85;last.connect(dry);dry.connect(MASTER);
+  const send=AC.createGain();send.gain.value=.55;last.connect(send);send.connect(fxBus());
+  o1.start(t);o2.start(t);o1.stop(t+.32);o2.stop(t+.32);}
+function zap(y=260,pan=0){if(!AC)return;const i=SET.laser%LASERS.length,L=LASERS[i],n=noteFor(y);
+  if(i===0){spaceZap(n,0,pan);return;}
+  if(L[0]==='1981'){defenderZap(pan);return;}
+  const sh=5-Math.round(n*5/(SCALE.length-1)),cl=v=>Math.max(0,Math.min(31,v));tiaPlay('laser'+i+'_'+n,()=>sweep(L[1],cl(L[2]+sh),cl(L[3]+sh),L[4],L[5],L[6]));}
+/* 1981 LASER: the algorithm Sam Dicker's 1980 Defender sound board used for the player laser.
+   Sound #$14 routes to its white-noise routine: 1-bit noise from a 16-bit shift register, output at full
+   amplitude or zero. Every 32 samples the amplitude drops by one step (from 255) and the delay between
+   samples grows by one loop, so the noise's sample rate - and its apparent pitch - slides down as it fades.
+   Timing modelled on the board's ~894.9 kHz 6802 clock (about 50 + 8*delay cycles per sample).
+   Like the original single-voice board, a new shot cuts off the last one. */
+let DEFBUF=null,DEFSRC=null;
+function defenderBuf(){const sr=44100,len=.85,N=Math.floor(sr*len),b=AC.createBuffer(1,N,sr),d=b.getChannelData(0);
+  let HI=0x5A,LO=0xC3,i=0,acc=0;
+  for(let X=1;X<=255&&i<N;X++){const amp=256-X,hold=(50+8*X)/894886*sr;
+    for(let c=0;c<32&&i<N;c++){let a=LO>>3;a^=LO;const cin=a&1;const hiOut=HI&1;HI=(HI>>1)|(cin<<7);const bit=LO&1;LO=(LO>>1)|(hiOut<<7);
+      const v=bit?amp:0;acc+=hold;while(acc>=1&&i<N){d[i++]=v/255*.5;acc-=1;}}}
+  const fade=Math.floor(sr*.35);for(let k=0;k<fade;k++){const j=N-fade+k;d[j]*=1-k/fade;}
+  return b;}
+function defenderZap(pan){if(!DEFBUF)DEFBUF=levelBuf(defenderBuf(),.016);if(DEFSRC){try{DEFSRC.stop();}catch(e){}}
+  const s=AC.createBufferSource(),hp=AC.createBiquadFilter(),g=AC.createGain(),pn=panNode(pan);s.buffer=DEFBUF;
+  hp.type='highpass';hp.frequency.value=60;g.gain.value=1;s.connect(hp);hp.connect(g);g.connect(pn);pn.connect(MASTER);s.start();DEFSRC=s;}
+function whistle(){tone(1500,350,1.3,'square',.018);}
+function splatSound(){if(!AC)return;[[700,500],[500,300],[300,90]].forEach(([a,b],i)=>setTimeout(()=>tone(a,b,.07,'square',.05),i*55));
+  setTimeout(()=>{thud();humanDown(null);},170);}
+function tone(f1,f2,dur,type='square',vol=.05){if(!AC)return;const t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();o.type=type;
+  o.frequency.setValueAtTime(f1,t);o.frequency.exponentialRampToValueAtTime(Math.max(20,f2),t+dur);g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g);g.connect(MASTER);o.start(t);o.stop(t+dur+.02);}
+function boom(dur=.4,vol=.2){if(!AC)return;noise();
+  const t=AC.currentTime,s=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();f.type='lowpass';f.frequency.setValueAtTime(1800,t);f.frequency.exponentialRampToValueAtTime(100,t+dur);
+  s.buffer=noiseBuf;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(MASTER);s.start(t);s.stop(t+dur);}
+
+/* THE NAN II THEME, SAVES THE HUMANS CUT. Title: the tune as the boss wrote it -- G minor,
+   132 BPM, his sine -- with chords and a soft beat. In play: an 8-bit arcade version,
+   up a step in A minor (the key every scale here starts on, so the explosions' notes
+   land in tune), and it speeds up with every wave. */
+const MUSIC={
+  title:{bpm:132,key:0,vol:.45,echo:.3,form:['MP','MPBd','MHPBd','OHPABdF'],
+    lead:{w:'sine',v:.13,a:.01,r:.06,fx:.18},hi:{w:'sine',v:.08,a:.01,r:.06,fx:.25},harm:{w:'triangle',v:.06,a:.01,r:.06},
+    pad:{w:'sawtooth',det:9,cut:1100,a:.35,r:.5,v:.022},
+    arp:{w:'triangle',v:.045,pl:.09,pat:[0,1,2,3,2,1],oct:12},
+    bass:{w:'triangle',v:.16,pat:'r...r...r...r.o.',gate:.9},
+    drums:{kit:'soft',k:'x.......x.......',h:'..x...x...x...x.',s:'....x.......x...'}},
+  play:{bpm:140,key:2,vol:.58,echo:.22,form:['MBd','MABD','OHABDF','EPABD','MABD','OHAPBDF'],
+    lead:{w:'pulse',v:.07,cut:3200,len:1.6,fx:.1},hi:{w:'square',v:.04,cut:2600,len:1.6},harm:{w:'pulse',v:.045,cut:2400,len:1.6},
+    pad:{w:'square',v:.012,cut:900,a:.03,r:.1},
+    arp:{w:'square',v:.028,cut:2600,pl:.07,pat:[0,1,2,3,4,3,2,1],oct:12},
+    bass:{w:'triangle',v:.17,pat:'r.r.o.r.r.r.o.r.',gate:.75},
+    drums:{kit:'chip',k:'x.....x...x.....',s:'....x.......x...',h:'x.x.x.x.x.x.x.x.'}},
+  /* game over: the last bar's notes, slowed and falling, onto a G minor chord */
+  over:{bpm:96,key:2,vol:.5,once:true,len:40,seq:[[0,3,65],[4,3,62],[8,3,58],[12,22,55],[12,22,43,'bass'],[12,22,50,'pad'],[12,22,58,'pad'],[12,22,62,'pad']],
+    lead:{w:'triangle',v:.1,vib:.3,r:.4,fx:.3},pad:{w:'sawtooth',det:10,cut:1000,a:.15,r:1,v:.022},bass:{w:'sine',v:.14,r:.8}}};
+function musicWant(){if(!G)return {id:'title'};
+  if(G.state==='over')return {id:G.overT<5?'over':'title'};
+  return {id:'play',bpm:Math.min(168,140+3*(G.wave-1)),muffle:G.state==='paused'};}
+/* ================= NAN II THEME MUSIC =================
+   The boss's NAN II Theme, written in his Melody Cartridge (2026-09-24): four bars of
+   G minor at 132 BPM, 29 eighth notes. This engine is the same in all three NAN II
+   games; each game dresses the tune in its own arrangements (MUSIC, just above):
+   tempo, key, sounds, chords and a beat. Chords under the tune: Gm | Eb | Cm | Bb F.
+   The game says what it wants to hear through musicWant(). MUSIC in the pause
+   menu sets its level, 0-10 (0 is off), and M turns it off and back on --
+   remembered for all three games ('b9musvol'; 'b9music', the old on/off, is
+   still written and read). VOLUME, under it, is everything (B9VOL, below).
+   An arrangement is sections of four bars; each section is a string of parts:
+   M the tune, O the tune an octave up, E the tune in bars 1 and 3 only (call and
+   answer), H a harmony under the tune, P pad chords, A arpeggio, B bass,
+   D the drums, d kick and hats only, F a snare fill into the next section. */
+const B9MUS=(()=>{
+/* the tune as written: 16th step -> MIDI note, every note an eighth */
+const TUNE={};[0,16,32].forEach(o=>[[0,55],[4,67],[6,67],[8,58],[10,58],[12,60],[14,62]].forEach(([s,p])=>TUNE[s+o]=p));
+[[48,67],[50,67],[52,62],[54,62],[56,65],[58,65],[60,58],[62,58]].forEach(([s,p])=>TUNE[s]=p);
+/* one chord per half bar, voiced round G3, and the bass root under each */
+const CH=[[55,58,62],[55,58,62],[55,58,63],[55,58,63],[55,60,63],[55,60,63],[53,58,62],[53,57,60]];
+const RT=[43,43,39,39,48,48,46,41];
+const same=(a,b)=>CH[a]&&CH[b]&&CH[a].join()===CH[b].join();
+/* the harmony voice: the highest chord note at least a minor third under the tune */
+function harm(p,ch){let b=null;for(const c of ch)for(let o=-36;o<=36;o+=12){const q=c+o;if(q<=p-3&&(b===null||q>b))b=q;}return b;}
+const hz=m=>440*Math.pow(2,(m-69)/12);
+const PW=new WeakMap(),NZ=new WeakMap();
+function pulse(c){let w=PW.get(c);if(!w){const N=48,re=new Float32Array(N),im=new Float32Array(N);
+  for(let n=1;n<N;n++)re[n]=2/(n*Math.PI)*Math.sin(n*Math.PI*.25);w=c.createPeriodicWave(re,im);PW.set(c,w);}return w;}
+function noise(c){let b=NZ.get(c);if(!b){b=c.createBuffer(1,c.sampleRate,c.sampleRate);const d=b.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;NZ.set(c,b);}return b;}
+function panTo(c,x,dst){if(!x||!c.createStereoPanner)return dst;const p=c.createStereoPanner();p.pan.value=x;p.connect(dst);return p;}
+/* ONE NOTE. o is the instrument: w wave (sine triangle square sawtooth pulse bell), v volume,
+   a attack, r release, pl pluck (rings down with this time constant instead of holding),
+   cut low-pass, sw filter sweep (starts sw times higher), q resonance, det detune in cents
+   (two voices), vib vibrato in semitones, fx echo send, bus 'pump' to duck under the kick */
+function voice(c,out,o,m,t,dur,px){
+  const g=c.createGain();g.connect(panTo(c,px||o.pan,out[o.bus||'main']));
+  if(o.fx){const s=c.createGain();s.gain.value=o.fx;g.connect(s);s.connect(out.fx);}
+  let head=g;
+  if(o.cut){const lp=c.createBiquadFilter();lp.type='lowpass';lp.Q.value=o.q||.7;
+    if(o.sw){lp.frequency.setValueAtTime(o.cut*o.sw,t);lp.frequency.exponentialRampToValueAtTime(o.cut,t+(o.swt||.25));}
+    else lp.frequency.value=o.cut;lp.connect(g);head=lp;}
+  const f=hz(m),a=o.a||.005,r=o.r||.04,end=Math.max(t+a+.02,t+dur),stop=o.pl?t+a+o.pl*5:end+r*2;
+  const car=[],all=[];
+  const mk=d=>{const x=c.createOscillator();if(o.w==='pulse')x.setPeriodicWave(pulse(c));else x.type=o.w==='bell'?'sine':o.w;
+    x.frequency.value=f;if(d)x.detune.value=d;x.connect(head);car.push(x);all.push(x);};
+  if(o.det){mk(o.det);mk(-o.det);}else mk(0);
+  if(o.w==='bell'){const mo=c.createOscillator(),mg=c.createGain();mo.frequency.value=f*(o.ratio||3.5);
+    mg.gain.setValueAtTime(f*(o.idx||1.2),t);mg.gain.exponentialRampToValueAtTime(f*.01,t+(o.idt||.5));
+    mo.connect(mg);for(const x of car)mg.connect(x.frequency);all.push(mo);}
+  if(o.vib){const l=c.createOscillator(),lg=c.createGain();l.frequency.value=o.vibr||5.5;
+    lg.gain.setValueAtTime(0,t);lg.gain.linearRampToValueAtTime(f*(Math.pow(2,o.vib/12)-1),t+Math.max(.05,Math.min(.35,dur)));
+    l.connect(lg);for(const x of car)lg.connect(x.frequency);all.push(l);}
+  const v=o.det?o.v*.6:o.v;
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+a);
+  if(o.pl)g.gain.setTargetAtTime(0,t+a,o.pl);else g.gain.setTargetAtTime(0,end,r/3);
+  for(const x of all){x.start(t);x.stop(stop);}}
+/* THE KITS: chip (NES-style), club (drum machine), soft (brushes), junk (clanks) */
+function hit(c,out,k,kit,t,v){const d=out.main;
+  if(k==='k'){const o=c.createOscillator(),g=c.createGain(),chip=kit==='chip';o.type=chip?'triangle':'sine';
+    o.frequency.setValueAtTime(chip?210:150,t);o.frequency.exponentialRampToValueAtTime(chip?48:42,t+.11);
+    const vol=v*(kit==='soft'?.2:chip?.34:.3),len=kit==='club'?.34:.22;
+    g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+len);o.connect(g);g.connect(d);o.start(t);o.stop(t+len+.02);
+    if(out.pumpOn){const p=out.pump.gain;p.cancelScheduledValues(t);p.setValueAtTime(1,t);p.linearRampToValueAtTime(.3,t+.012);p.linearRampToValueAtTime(1,t+out.sd*3.5);}
+    return;}
+  if(k==='m'){/* a clank: two squares at a clashing ratio through a band-pass */
+    const g=c.createGain(),bp=c.createBiquadFilter();bp.type='bandpass';bp.frequency.value=2400;bp.Q.value=1.5;
+    for(const f of [540,540*1.53]){const o=c.createOscillator();o.type='square';o.frequency.value=f*(.97+Math.random()*.06);o.connect(bp);o.start(t);o.stop(t+.12);}
+    g.gain.setValueAtTime(.1*v,t);g.gain.exponentialRampToValueAtTime(.001,t+.1);bp.connect(g);g.connect(panTo(c,.3,d));return;}
+  const s=c.createBufferSource();s.buffer=noise(c);const f=c.createBiquadFilter(),g=c.createGain();
+  let len,vol,px=0;
+  if(k==='s'){f.type='bandpass';f.frequency.value=kit==='chip'?3200:1800;f.Q.value=.8;len=kit==='soft'?.12:.16;vol=kit==='soft'?.07:.16;
+    if(kit!=='chip'&&kit!=='soft'){const o=c.createOscillator(),og=c.createGain();o.type='triangle';o.frequency.setValueAtTime(190,t);o.frequency.exponentialRampToValueAtTime(150,t+.08);
+      og.gain.setValueAtTime(.12*v,t);og.gain.exponentialRampToValueAtTime(.001,t+.09);o.connect(og);og.connect(d);o.start(t);o.stop(t+.1);}}
+  else if(k==='h'){f.type='highpass';f.frequency.value=8000;len=.035;vol=kit==='soft'?.03:.05;px=-.25;}
+  else{f.type='highpass';f.frequency.value=6500;len=.18;vol=.045;px=.25;}
+  g.gain.setValueAtTime(vol*v,t);g.gain.exponentialRampToValueAtTime(.001,t+len);
+  s.connect(f);f.connect(g);g.connect(panTo(c,px,d));s.start(t,Math.random()*.5);s.stop(t+len+.02);}
+/* ONE 16th of an arrangement, i steps in */
+function step(c,out,A,i,t,sd){
+  out.sd=sd;out.pumpOn=!!A.pump;
+  if(A.seq){for(const e of A.seq)if(e[0]===i)voice(c,out,A[e[3]||'lead'],e[2]+(A.key||0),t,e[1]*sd);return;}
+  const s=i%64,sec=A.form[Math.floor(i/64)%A.form.length],K=A.key||0,h=s>>3,bar=s>>4,j=s%16,has=x=>sec.includes(x);
+  const ch=CH[h].map(n=>n+K),mid=!same(bar*2,bar*2+1);
+  const p0=TUNE[s];
+  if(p0!=null&&!(has('E')&&bar%2)){const L=A.lead,p=p0+K+(L.oct||0),len=(L.len||1.7)*sd,low=has('M')||has('E');
+    if(low)voice(c,out,L,p,t,len);
+    if(has('O'))voice(c,out,A.hi||L,p+12,t,len);
+    if(has('H')){const q=harm(low?p:p+12,ch);if(q!==null)voice(c,out,A.harm||L,q,t,len);}}
+  if(has('P')&&s%8===0&&(j===0||!same(h,h-1))){const n=h<7&&same(h,h+1)?16:8;
+    for(const x of ch)voice(c,out,A.pad,x+(A.pad.oct||0),t,n*sd);}
+  if(has('A')){const R=A.arp,rt=R.rate||1;if(s%rt===0){const k=s/rt,tn=[ch[0],ch[1],ch[2],ch[0]+12,ch[1]+12,ch[2]+12];
+    voice(c,out,R,tn[R.pat[k%R.pat.length]]+(R.oct||0),t,rt*sd*(R.gate||.7),k%2?.35:-.35);}}
+  if(has('B')){const B=A.bass,pt=B.pat;let x=pt[j];if(x==='-'&&j===8&&mid)x='r';
+    if(x==='r'||x==='o'||x==='f'){const lim=mid&&j<8?8:16;let n=1;while(j+n<lim&&pt[j+n]==='-')n++;
+      voice(c,out,B,RT[h]+K+(B.oct||0)+(x==='o'?12:x==='f'?7:0),t,n*sd*(B.gate||.85));}}
+  const D=A.drums;
+  if(D&&(has('D')||has('d'))){const full=has('D'),fill=has('F')&&s>=56;
+    const at=(str,k)=>{const q=str&&str[j];if(q&&q!=='.')hit(c,out,k,D.kit,t,q==='x'?1:.5);};
+    at(D.k,'k');at(D.h,'h');if(full&&!fill){at(D.s,'s');at(D.o,'o');at(D.m,'m');}
+    if(fill&&s%(D.fr||1)===0)hit(c,out,'s',D.kit,t,.35+.65*(s-56)/7);}}
+/* the music's own little mixer: parts -> main -> bus (off switch) -> low-pass (muffled
+   in the pause menu) -> the game's master. The echo is its own too, a dotted eighth. */
+function rig(c,dest){const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=16000;lp.connect(dest);
+  const bus=c.createGain();bus.connect(lp);const main=c.createGain();main.connect(bus);
+  const pump=c.createGain();pump.connect(main);
+  const fx=c.createGain(),dl=c.createDelay(2),fb=c.createGain(),fl=c.createBiquadFilter();fl.type='lowpass';fl.frequency.value=2600;
+  fx.connect(dl);dl.connect(fl);fl.connect(fb);fb.connect(dl);fl.connect(main);
+  return {lp,bus,main,pump,fx,dl,fb,sd:.1,pumpOn:false};}
+function dress(out,A,bpm,t){out.main.gain.setValueAtTime(A.vol||1,t);out.dl.delayTime.setValueAtTime(Math.min(1.5,.75*60/bpm),t);out.fb.gain.setValueAtTime(A.echo!=null?A.echo:.3,t);}
+/* the level, 0-10, 3 dB a step; 0 is off, and last is where M brings it back to */
+const S={lv:10,last:10,id:null,A:null,i:0,next:0,done:true,muf:null,out:null};
+const lvl=v=>Math.max(0,Math.min(10,Math.round(+v)||0)),lvGain=v=>v>0?Math.pow(10,(v-10)*3/20):0;
+try{const v=localStorage.getItem('b9musvol');S.lv=v!==null?lvl(v):localStorage.getItem('b9music')==='0'?0:10;
+  S.last=lvl(localStorage.getItem('b9muslast')||10)||10;}catch(e){}
+function tick(){if(typeof AC==='undefined'||!AC||!MASTER)return;
+  if(!S.out){S.out=rig(AC,MASTER);S.out.bus.gain.value=lvGain(S.lv);}
+  const now=AC.currentTime,w=S.lv>0?musicWant():null,muf=!!(w&&w.muffle);
+  if(muf!==S.muf){S.muf=muf;S.out.lp.frequency.setTargetAtTime(muf?520:16000,now,.15);}
+  const A=w&&MUSIC[w.id];if(!A){S.id=null;return;}
+  const bpm=w.bpm||A.bpm;
+  if(w.id!==S.id){S.id=w.id;S.A=A;S.i=0;S.done=false;S.next=Math.max(S.next,now+.05);dress(S.out,A,bpm,S.next);}
+  if(S.next<now-.2)S.next=now+.05;
+  while(!S.done&&S.next<now+.25){const sd=60/bpm/4;step(AC,S.out,A,S.i,S.next,sd);S.next+=sd;
+    if(++S.i>=(A.len||A.form.length*64)){if(A.once)S.done=true;S.i=0;}}}
+function setLevel(v){v=lvl(v);if(v===S.lv)return;if(S.lv>0)S.last=S.lv;S.lv=v;
+  try{localStorage.setItem('b9musvol',v);localStorage.setItem('b9muslast',S.last);localStorage.setItem('b9music',v>0?'1':'0');}catch(e){}
+  if(S.out)S.out.bus.gain.setTargetAtTime(lvGain(v),AC.currentTime,.06);if(!v)S.id=null;}
+function toggle(){setLevel(S.lv>0?0:S.last);}
+setInterval(tick,40);
+return {toggle,setLevel,step,rig,dress,get level(){return S.lv;},get on(){return S.lv>0;},get playing(){return S.id;}};})();
+/* THE VOLUME (the boss, 2026-09-24: "volume settings in their pause menus"): everything
+   the game plays, 0-10, 3 dB a step (0 is silent), remembered for all three games
+   ('b9vol'). It turns the output trim after the limiter, and 10 is the level the games
+   already had -- clear of the chest speaker's ceiling -- so it only ever comes down. */
+const B9VOL=(()=>{let v=10,node=null,base=1;
+try{const s=localStorage.getItem('b9vol');if(s!==null)v=Math.max(0,Math.min(10,Math.round(+s)||0));}catch(e){}
+const g=()=>v>0?base*Math.pow(10,(v-10)*3/20):0;
+function trim(n,b){node=n;base=b;n.gain.value=g();}
+function set(x){v=Math.max(0,Math.min(10,Math.round(x)));try{localStorage.setItem('b9vol',v);}catch(e){}
+  if(node)node.gain.setTargetAtTime(g(),node.context.currentTime,.03);}
+return {trim,set,get level(){return v;}};})();
+
+
+/* ---------- input: keyboard + gamepad ---------- */
+const keys={};let padSeen=false;
+addEventListener('keydown',e=>{keys[e.code]=true;audio();if(e.code==='KeyM'&&!e.repeat)B9MUS.toggle();if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();});
+addEventListener('keyup',e=>{keys[e.code]=false;});
+addEventListener('gamepadconnected',()=>{padSeen=true;});
+addEventListener('pointerdown',()=>{audio();cv.focus();});
+const prev={fire:false,bomb:false,start:false,color:false,x:0,y:0};
+function readInput(){let x=0,y=0,fire=!!(keys.Space||keys.KeyJ),bomb=!!(keys.KeyB||keys.KeyK),start=!!(keys.Enter||keys.KeyP),color=!!keys.KeyC,lzr=!!keys.KeyL,boost=!!(keys.ShiftLeft||keys.ShiftRight);
+  if(keys.ArrowLeft||keys.KeyA)x-=1;if(keys.ArrowRight||keys.KeyD)x+=1;if(keys.ArrowUp||keys.KeyW)y-=1;if(keys.ArrowDown||keys.KeyS)y+=1;
+  const pads=navigator.getGamepads?navigator.getGamepads():[];
+  for(const p of pads){if(!p)continue;padSeen=true;const ax=p.axes[0]||0,ay=p.axes[1]||0;const b=i=>p.buttons[i]&&(p.buttons[i].pressed||p.buttons[i].value>.5);
+    if(Math.abs(ax)>.3)x+=Math.sign(ax);if(Math.abs(ay)>.25)y+=ay;
+    if(b(14))x-=1;if(b(15))x+=1;if(b(12))y-=1;if(b(13))y+=1;
+    /* THE NAN II CONTROLLER, the same in every NAN II game (the boss, 2026-09-24): X fires, A is
+       the move (here BOOST, and on the ground it launches NAN II back into the air), B is the
+       bomb. The bumpers back them up -- RB fires, LB bombs -- since the triggers never
+       reach a page on NAN II's screen (jetson/README.md). */
+    if(b(2)||b(5))fire=true;if(b(0))boost=true;if(b(1)||b(4))bomb=true;if(b(9))start=true;if(b(8))lzr=true;if(b(0)||b(9))audio();}
+  x=Math.max(-1,Math.min(1,x));y=Math.max(-1,Math.min(1,y));
+  const r={x,y,upP:y<-.5&&!(prev.y<-.5),downP:y>.5&&!(prev.y>.5),leftP:x<0&&!(prev.x<0),rightP:x>0&&!(prev.x>0),fire,bomb,boost,start,boostP:boost&&!prev.boost,fireP:fire&&!prev.fire,bombP:bomb&&!prev.bomb,startP:start&&!prev.start,colorP:color&&!prev.color,lzrP:lzr&&!prev.lzr};prev.color=color;prev.lzr=lzr;
+  prev.fire=fire;prev.bomb=bomb;prev.boost=boost;prev.start=start;prev.x=x;prev.y=y;return r;}
+
+/* EXIT GAME, from the pause menu: back to NAN II's media library, on the Games
+   tab. Inside NAN II's face the game is a page in the face's frame and NAN II's own
+   screen state is the truth, so the face server is asked to change it -- the
+   same /api/screen the shelf's game cards use to open a game. Opened on its
+   own anywhere else, the page just goes there itself. */
+let exiting=false;
+function exitGame(){if(exiting)return;exiting=true;const url='../';
+  let inB9=false;try{inB9=window.parent!==window&&!!parent.document.getElementById('dock');}catch(e){}
+  if(!inB9){location.href=url;return;}
+  fetch('/api/screen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({src:url})})
+    .then(r=>{if(!r.ok)throw 0;}).catch(()=>{location.href=url;});}
+
+/* ---------- game state ---------- */
+let G=null,titleCam=0;
+/* ================= SCALE BIRD POWERS =================
+   Ram the bird and it grants one power for a few seconds; the whole screen changes colour while it lasts. */
+const POWERS={
+  slow:{name:'SLOW TIME',hue:'#3fd8ff',dur:7},
+  rapid:{name:'RAPID FIRE',hue:'#ff7a1f',dur:8},
+  shield:{name:'SHIELD',hue:'#ffb24a',dur:8},
+  feather:{name:'FEATHER FALL',hue:'#f2ecdd',dur:12}};
+function grantPower(){const keys=Object.keys(POWERS).filter(k=>k!==G.lastPw),k=keys[Math.floor(Math.random()*keys.length)];
+  G.pw={k,t:POWERS[k].dur,dur:POWERS[k].dur};G.lastPw=k;PWHEX=POWERS[k].hue;refreshHue();say(POWERS[k].name,2.2);
+  if(AC){if(k==='slow'){tone(900,90,.9,'sine',.08);tone(450,45,.9,'triangle',.05);}else if(k==='rapid'){for(let i=0;i<6;i++)setTimeout(()=>tone(600+i*180,900+i*180,.06,'square',.03),i*45);}
+    else if(k==='shield'){tone(220,880,.5,'triangle',.06);tone(330,1320,.5,'sine',.04);}else{tone(1320,660,.6,'sine',.05);setTimeout(()=>tone(990,495,.6,'sine',.04),150);}}}
+function endPower(){if(!G.pw)return;const k=G.pw.k;G.pw=null;PWHEX=null;refreshHue();if(AC&&k==='slow'){tone(90,900,.6,'sine',.06);}else if(AC)tone(660,330,.2,'triangle',.04);}
+function newGame(){PWHEX=null;refreshHue();G={state:'play',score:0,lives:3,bombs:3,wave:0,nextLife:10000,camX:0,camOff:W*.3,camVel:0,
+  player:{x:WW/2,y:260,vx:0,dir:1,inv:2,fireCd:0,alive:true,thrust:false,stam:1,boosting:false,boostLock:false,regenT:0,wheelT:0},
+  pw:null,lastPw:'',splats:[],trail:[],dust:[],rings:[],debris:[],wreck:[],combo:0,comboT:0,shake:0,hitStop:0,trailAcc:0,dustAcc:0,menu:0,alarmT:0,bird:null,birdT:rnd(14,22),scaleName:'',lasers:[],enemies:[],humans:[],bullets:[],parts:[],pops:[],toSpawn:0,spawnT:0,msg:'',msgT:0,flash:0,deadT:0,waveT:0,waveDone:false,fallen:false,overT:0};
+  for(let i=0;i<10;i++)addHuman();startWave();}
+function addHuman(){const x=rnd(0,WW);G.humans.push({x,y:groundY(x)-6,vx:(Math.random()<.5?-1:1)*rnd(6,14),state:'walk',claimed:false,vy:0});}
+function say(t,d=2.2){G.msg=t;G.msgT=d;}
+function startWave(){G.wave++;G.toSpawn=Math.min(24,5+2*G.wave);G.spawnT=1.2;G.waveT=0;G.waveDone=false;
+  if(G.humans.length===0||(G.wave>1&&G.wave%4===1)){while(G.humans.length<10)addHuman();G.fallen=false;}
+  const sc=scaleFor(G.wave);SCALE=buildScale(sc[1]);G.scaleName=sc[0];say('Wave '+G.wave+': '+sc[0],2.6);
+  /* a little run up the new scale so you hear its flavour */
+  if(AC)for(let k=0;k<SCALE.length;k++)spaceZap(k,.35+k*.085);}
+function spawnLander(){const x=wrap(G.player.x+rnd(700,WW-700));G.enemies.push({kind:'lander',x,y:rnd(TOP+30,TOP+90),vx:0,vy:0,state:'seek',target:null,cd:rnd(1.5,3.5),bob:rnd(0,TAU)});
+  burst(x,TOP+60,C.lander,8);}
+function toMutant(e){e.kind='mutant';e.state='';if(e.target){e.target.claimed=false;}e.target=null;e.vx=0;e.vy=0;}
+const onScreen=x=>{const s=wd(x,G.camX);return s>0&&s<W;};
+function burst(x,y,col,n,spd=240){for(let i=0;i<n;i++){const a=rnd(0,TAU),s=rnd(30,spd);G.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rnd(.4,1),max:1,col});}}
+function addScore(v,at){G.score+=v;if(at)G.pops.push({x:at.x,y:at.y-16,t:1,txt:String(v)});
+  if(G.score>=G.nextLife){G.lives++;G.nextLife+=10000;say('Extra ship',1.5);tone(523,1046,.4,'triangle',.06);}}
+function fireLaser(){const p=G.player;
+  /* driving, the gun is turned up 90 degrees: the beam goes straight up, riding along with him */
+  if(p.drive)G.lasers.push({x:wrap(p.x+p.dir*9),y:p.y-18,up:true,vx:p.vx,dir:p.dir,spd:1500,life:.42,trail:0,hue:rnd(0,360)});
+  else G.lasers.push({x:wrap(p.x+p.dir*17),y:p.y+6,dir:p.dir,spd:1500+Math.abs(p.vx),life:.42,trail:0,hue:rnd(0,360)});
+  zap(p.drive?TOP+80:p.y,(wd(p.x,G.camX)/W)*2-1);}
+function killEnemy(e,quiet){e.dead=true;burst(e.x,e.y,e.kind==='lander'?C.lander:C.mutant,18);
+  /* combo chain: kills within 1.3 s stack a multiplier (up to x8) */
+  G.combo=G.comboT>0?G.combo+1:1;G.comboT=1.3;const mult=Math.min(G.combo,8);addScore(150*mult,e);
+  if(mult>1)G.pops.push({x:e.x,y:e.y-30,t:1,txt:'X'+mult});
+  /* feel: a hair of hit-freeze and a small jolt */
+  G.hitStop=Math.max(G.hitStop,quiet?0:.045);G.shake=Math.max(G.shake,quiet?0:4);
+  /* shockwave ring and tumbling debris */
+  G.rings.push({x:e.x,y:e.y,t:0});
+  for(let k=0;k<6;k++)G.debris.push({x:e.x,y:e.y,vx:rnd(-170,170),vy:rnd(-240,-50),life:rnd(1.6,2.6),a:rnd(0,TAU),va:rnd(-14,14),len:rnd(3,7)});
+  if(e.target){const h=e.target;h.claimed=false;if(h.state==='held'){h.state='fall';h.vy=0;h.fy0=h.y;whistle();}}if(!quiet)enemyBoom(e,G.combo);}
+function removeHuman(h){h.gone=true;burst(h.x,h.y,C.ink,12,160);grunt(h);}
+/* a short "ugh": buzzy voice through two vowel formants, pitch dropping */
+/* ================= SOUNDSCAPE =================
+   Retro recipe: every hit is layers - a tiny click for the attack, a pitched core for recognition,
+   a filtered noise body for grit - kept short. On top, Rez-style: explosions also ring a note
+   from the current scale, quantized to the beat, so the fight plays music. */
+const BPM=100,STEP=60/BPM/4;let T0=0,MUS={next:0,step:0};let whiteBuf=null;
+function white(){if(!whiteBuf){const n=AC.sampleRate,b=AC.createBuffer(1,n,AC.sampleRate),d=b.getChannelData(0);for(let i=0;i<n;i++)d[i]=Math.random()*2-1;whiteBuf=b;}return whiteBuf;}
+function qWait(){if(!AC)return 0;const now=AC.currentTime-T0;return Math.ceil(now/STEP+.02)*STEP-now;}
+function panNode(pan){if(!AC.createStereoPanner)return AC.createGain();const p=AC.createStereoPanner();p.pan.value=Math.max(-.85,Math.min(.85,pan||0));return p;}
+const screenPan=x=>G?(wd(x,G.camX)/W)*2-1:0;
+function noteHz(i,oct=0){const sc=SCALE,n=sc.length;const k=((i%n)+n)%n;return ROOT()*Math.pow(2,(sc[k]+12*(oct+Math.floor(i/n)))/12);}
+/* a plucked chime: sine + soft triangle an octave up, into the space echo */
+function pluck(f,when=0,pan=0,vol=.07,dur=.5,type='triangle'){const t=AC.currentTime+when,o=AC.createOscillator(),o2=AC.createOscillator(),g=AC.createGain(),pn=panNode(pan);
+  o.type='sine';o2.type=type;o.frequency.value=f;o2.frequency.value=f*2;const g2=AC.createGain();g2.gain.value=.25;
+  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.006);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g);o2.connect(g2);g2.connect(g);g.connect(pn);pn.connect(MASTER);const sd=AC.createGain();sd.gain.value=.5;pn.connect(sd);sd.connect(fxBus());
+  o.start(t);o2.start(t);o.stop(t+dur+.05);o2.stop(t+dur+.05);}
+/* filtered noise burst with a downward cutoff sweep - the 'boom' */
+function noiseHit(when,pan,vol,dur,f0,f1){const t=AC.currentTime+when,s=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain(),pn=panNode(pan);
+  s.buffer=white();s.playbackRate.value=rnd(.8,1.2);f.type='lowpass';f.Q.value=1;f.frequency.setValueAtTime(f0,t);f.frequency.exponentialRampToValueAtTime(f1,t+dur);
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(pn);pn.connect(MASTER);s.start(t,rnd(0,.5));s.stop(t+dur+.02);}
+/* sine thump with a fast pitch drop - the weight */
+function thump(when,pan,vol,f0,f1,dur){const t=AC.currentTime+when,o=AC.createOscillator(),g=AC.createGain(),pn=panNode(pan);o.type='sine';
+  o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f1,t+dur*.7);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.004);
+  g.gain.exponentialRampToValueAtTime(.0001,t+dur);o.connect(g);g.connect(pn);pn.connect(MASTER);o.start(t);o.stop(t+dur+.02);}
+/* square-wave chirp: the retro 'pew/blip' core */
+function chirp(when,pan,vol,f0,f1,dur,type='square'){const t=AC.currentTime+when,o=AC.createOscillator(),lp=AC.createBiquadFilter(),g=AC.createGain(),pn=panNode(pan);
+  o.type=type;o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f1,t+dur);lp.type='lowpass';lp.frequency.value=3200;
+  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.003);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(lp);lp.connect(g);g.connect(pn);pn.connect(MASTER);o.start(t);o.stop(t+dur+.02);}
+/* ENEMY DOWN: click + zap core + noise body + thump, then a quantized note in the scale */
+function enemyBoom(e,combo=1){if(!AC)return;const pan=screenPan(e.x),mut=e.kind!=='lander',v=rnd(.85,1.1),det=Math.pow(2,rnd(-2,2)/12);
+  const flavour=Math.floor(Math.random()*4);
+  chirp(0,pan,.045*v,rnd(1300,1900)*det,rnd(220,380),.045);
+  if(flavour===0){/* classic falling zap */ chirp(0,pan,.045*v,(mut?rnd(480,620):rnd(780,980))*det,mut?90:140,rnd(.15,.22));}
+  else if(flavour===1){/* rising then collapsing */ chirp(0,pan,.04*v,(mut?300:500)*det,(mut?700:1100)*det,.07);chirp(.07,pan,.04*v,(mut?700:1100)*det,70,.2);}
+  else if(flavour===2){/* stuttering crackle */ for(let k=0;k<4;k++)chirp(k*.04,pan,.035*v*(1-k*.18),rnd(500,1200)*det,rnd(120,260),.035);}
+  else {/* warbling wobble down */ const t=AC.currentTime,o=AC.createOscillator(),l=AC.createOscillator(),lg=AC.createGain(),g=AC.createGain(),pn=panNode(pan);
+    o.type='square';o.frequency.setValueAtTime((mut?500:850)*det,t);o.frequency.exponentialRampToValueAtTime(80,t+.3);l.frequency.value=rnd(18,30);lg.gain.value=rnd(60,140);
+    l.connect(lg);lg.connect(o.frequency);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.035*v,t+.005);g.gain.exponentialRampToValueAtTime(.0001,t+.3);
+    const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2800;o.connect(lp);lp.connect(g);g.connect(pn);pn.connect(MASTER);o.start(t);l.start(t);o.stop(t+.32);l.stop(t+.32);}
+  noiseHit(0,pan,.2*v,rnd(.3,.55),rnd(3500,6000),rnd(90,160));thump(0,pan,.28*v,(mut?rnd(105,130):rnd(135,165))*det,rnd(35,45),rnd(.25,.35));
+  if(combo>1)pluck(noteHz(Math.min(combo+1,SCALE.length*2)),.03,pan,.06,.6);
+  else if(Math.random()<.5){const n=SCALE.length,i=mut?Math.floor(rnd(0,n/2)):Math.floor(rnd(n/2,n));pluck(noteHz(i,mut?-1:0),rnd(.02,.08),pan,.05,.6);}}
+/* SMART BOMB: a big low boom and the scale's chord, on the beat */
+function bombSound(){if(!AC)return;noiseHit(0,0,.35,1.2,3000,60);thump(0,0,.45,110,30,.9);const w=.05;[0,2,4,7].forEach((k,j)=>pluck(noteHz(k,-1),w+j*STEP*.5,(j-1.5)*.4,.06,1.4));}
+/* HUMAN DOWN: a little 'hup' squeak and a sad falling three-note sigh from the current scale */
+function humanDown(h){if(!AC)return;const pan=h?screenPan(h.x):0;
+  chirp(0,pan,.05,rnd(900,1100),rnd(1500,1700),.05,'square');
+  const n=SCALE.length,top=Math.floor(rnd(n*.5,n*.75));
+  [0,1,2].forEach(j=>{const t=.07+j*.11,f=noteHz(top-j*2),last=j===2;
+    const o=AC.createOscillator(),g=AC.createGain(),lp=AC.createBiquadFilter(),pn=panNode(pan),T=AC.currentTime+t,d=last?.42:.12;
+    o.type='square';o.frequency.setValueAtTime(f,T);if(last){o.frequency.setValueAtTime(f,T+.08);o.frequency.exponentialRampToValueAtTime(f*.84,T+d);
+      const l=AC.createOscillator(),lg=AC.createGain();l.frequency.value=9;lg.gain.value=f*.025;l.connect(lg);lg.connect(o.frequency);l.start(T);l.stop(T+d+.02);}
+    lp.type='lowpass';lp.frequency.value=1800;g.gain.setValueAtTime(.0001,T);g.gain.exponentialRampToValueAtTime(.05,T+.006);g.gain.setValueAtTime(.05,T+d*.6);g.gain.exponentialRampToValueAtTime(.0001,T+d);
+    o.connect(lp);lp.connect(g);g.connect(pn);pn.connect(MASTER);const sd=AC.createGain();sd.gain.value=.3;pn.connect(sd);sd.connect(fxBus());o.start(T);o.stop(T+d+.02);});}
+/* BACKGROUND PULSE: soft kick, off-beat tick and a bass note in the scale; it only plays during a wave */
+function music(){if(!AC||SET.mus!==1||!G||G.state!=='play'){MUS.next=0;return;}
+  const now=AC.currentTime;if(!MUS.next||MUS.next<now){MUS.next=T0+Math.ceil((now-T0)/STEP+.05)*STEP;}
+  while(MUS.next<now+.12){const t=MUS.next-now,k=MUS.step%16;
+    if(k%4===0)thump(t,0,.16,95,42,.22);
+    if(k%4===2)noiseHit(t,.3,.025,.05,9000,5000);
+    if(k===0||k===10){const o=AC.createOscillator(),g=AC.createGain(),lp=AC.createBiquadFilter(),T=MUS.next,f=noteHz(k===0?0:3,-2);
+      o.type='sawtooth';o.frequency.value=f;lp.type='lowpass';lp.frequency.setValueAtTime(600,T);lp.frequency.exponentialRampToValueAtTime(150,T+.5);
+      g.gain.setValueAtTime(.0001,T);g.gain.exponentialRampToValueAtTime(.06,T+.01);g.gain.exponentialRampToValueAtTime(.0001,T+.6);o.connect(lp);lp.connect(g);g.connect(MASTER);o.start(T);o.stop(T+.65);}
+    MUS.step++;MUS.next+=STEP;}}
+function grunt(h){if(!AC)return;humanDown(h);}
+/* while the theme plays, the laser and chimes play in D (the theme's key); otherwise in A */
+/* music key: the clan suite is rooted on C (Earth's key); the old pulse stays on A */
+function ROOT(){return 220;}
+
+/* ================= THE CLAN SUITE (Jody's themes) =================
+   EARTH C E G C | AIR G F# D C G F# D F# D C D B | FIRE D# C# C# D# D# C# B D# C# C# D# C# B B D# B D# C# B C# B
+   WATER D# D C D A | QI percussion.  4/4, quarter = 100, every theme a 2-bar loop.
+   Movements 1-5 give each clan 8 bars alone; Water's 2 bars link the sections;
+   the Finale stacks Earth, then Qi, then Air, then Fire. */
+const SUITE_BPM=100,S16=60/SUITE_BPM/4;
+function midiOf(n){const m=/^([A-G])(#|b)?(-?\d)$/.exec(n);return {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[m[1]]+(m[2]==='#'?1:m[2]==='b'?-1:0)+12*(+m[3]+1);}
+/* each motif: [note, start in 16ths, length in 16ths] across a 2-bar (32-step) loop */
+const seq=(notes,len,start=0)=>notes.split(' ').map((n,i)=>[n,start+i*len,len]);
+const MOTIFS={
+  earth:{ch:'bass',ev:[...seq('C2 E2 G2 C3',4),...seq('C2 E2 G2 C3',4,16)]},
+  air:{ch:'lead',ev:[...seq('G5 F#5 D5 C5 G5 F#5 D5 F#5 D5 C5 D5',2),['B4',22,10]]},
+  fire:{ch:'pulse',ev:[...seq('D#4 C#4 C#4 D#4 D#4 C#4 B3 D#4 C#4 C#4 D#4 C#4 B3 B3 D#4 B3 D#4 C#4 B3 C#4',1),['B3',20,12]]},
+  water:{ch:'water',ev:[...seq('D#4 D4 C4 D4',4),['A4',16,16]]}};
+/* the running order, in 2-bar loops */
+const PLAN=[];const add=(n,layers,name)=>{for(let i=0;i<n;i++)PLAN.push({layers,name});};
+add(4,['earth'],'Earth');add(1,['water'],'Water');add(4,['air'],'Air');add(1,['water'],'Water');
+add(4,['fire'],'Fire');add(1,['water'],'Water');add(4,['water'],'Water');add(4,['qi'],'Qi');add(1,['water'],'Water');
+add(4,['earth'],'Finale');add(4,['earth','qi'],'Finale');add(4,['earth','qi','air'],'Finale');add(4,['earth','qi','air','fire'],'Finale');add(1,['water'],'Water');
+const SUITE_STEPS=PLAN.length*32;
+/* 'as written' plays the true pitches; 'scale' bends every note to the nearest note of the level's scale (rooted on C) */
+function bend(m){const iv=SCALE.slice(0,SCALE.length-1).map(x=>x%12);const r=((m%12)+12)%12;let best=0,bd=99;
+  for(const x of iv)for(const y of [x-12,x,x+12]){const d=Math.abs(y-r);if(d<bd||(d===bd&&y<best)){bd=d;best=y;}}return m-r+best;}
+const mHz=m=>440*Math.pow(2,(m-69)/12);
+const PULSE={};
+function pulseWave(d){if(PULSE[d])return PULSE[d];const N=48,re=new Float32Array(N),im=new Float32Array(N);
+  for(let n=1;n<N;n++)re[n]=(2/(n*Math.PI))*Math.sin(n*Math.PI*d);return PULSE[d]=AC.createPeriodicWave(re,im);}
+function playTone(f,T,len,duty,vol,cut,vib){const o=AC.createOscillator(),g=AC.createGain(),lp=AC.createBiquadFilter();o.setPeriodicWave(pulseWave(duty));o.frequency.value=f;
+  if(vib){const l=AC.createOscillator(),lg=AC.createGain();l.frequency.value=5;lg.gain.setValueAtTime(0,T);lg.gain.linearRampToValueAtTime(f*.012,T+.3);l.connect(lg);lg.connect(o.frequency);l.start(T);l.stop(T+len);}
+  lp.type='lowpass';lp.frequency.value=cut;const end=T+len*.9;
+  g.gain.setValueAtTime(.0001,T);g.gain.exponentialRampToValueAtTime(vol,T+.005);g.gain.setValueAtTime(vol*.8,T+Math.min(.06,len*.4));g.gain.setValueAtTime(vol*.8,Math.max(T+.01,end-.025));g.gain.exponentialRampToValueAtTime(.0001,end);
+  o.connect(lp);lp.connect(g);g.connect(MASTER);const sd=AC.createGain();sd.gain.value=.2;g.connect(sd);sd.connect(fxBus());o.start(T);o.stop(end+.02);}
+function playBass(f,T,len){const o=AC.createOscillator(),g=AC.createGain();o.type='triangle';o.frequency.value=f;const end=T+len*.92;
+  g.gain.setValueAtTime(.0001,T);g.gain.exponentialRampToValueAtTime(.17,T+.008);g.gain.setValueAtTime(.13,end-.04);g.gain.exponentialRampToValueAtTime(.0001,end);
+  o.connect(g);g.connect(MASTER);o.start(T);o.stop(end+.02);}
+function playQi(k,t){if(k%16===0||k%16===8)thump(t,0,.2,110,45,.2);
+  if(k%16===4||k%16===12){noiseHit(t,0,.07,.11,5500,1400);chirp(t,0,.02,240,160,.05,'triangle');}
+  if(k%2===0)noiseHit(t,.25,k%4===0?.022:.014,.035,12000,8000);}
+function playStep(pos,T,now,mapped){const loop=PLAN[Math.floor(pos/32)],k=pos%32;
+  for(const L of loop.layers){if(L==='qi'){playQi(k,T-now);continue;}
+    const M=MOTIFS[L];for(const [n,st,len] of M.ev)if(st===k){let m=midiOf(n);if(mapped)m=bend(m);const f=mHz(m),dur=len*S16;
+      if(M.ch==='bass')playBass(f,T,dur);
+      else if(M.ch==='lead')playTone(f,T,dur,.5,.036,3200,len>=8);
+      else if(M.ch==='pulse')playTone(f,T,dur,.25,.04,2600,false);
+      else playTone(f,T,dur,.25,.038,2200,len>=8);}}}
+const TH={next:0,pos:0,mode:null,name:''};
+function wantMode(){if(!AC||SET.mus===0)return null;const menu=!G||G.state==='over';
+  if(menu)return 'written';if(SET.mus===1)return null;return SET.mus===2?'written':'scale';}
+function theme(){const w=wantMode();if(!w){TH.next=0;TH.mode=null;return;}
+  const now=AC.currentTime;if(!TH.next||TH.next<now-.05){TH.pos-=TH.pos%16;TH.next=now+.08;TH.mode=w;}
+  while(TH.next<now+.15){if(TH.pos%16===0){const nw=wantMode();if(nw!==TH.mode){TH.mode=nw;if(!nw){TH.next=0;return;}}}
+    playStep(TH.pos,TH.next,now,TH.mode==='scale');TH.name=PLAN[Math.floor(TH.pos/32)].name;
+    TH.pos=(TH.pos+1)%SUITE_STEPS;TH.next+=S16;}}
+/* arcade "OOF": a stair-stepped square voice through "oo" vowel formants, pitch falling in 8-bit steps */
+function oof(){const t=AC.currentTime,p0=rnd(170,230);
+  const o=AC.createOscillator();o.type='square';
+  for(let k=0;k<8;k++)o.frequency.setValueAtTime(p0*(1.35-k*.085),t+k*.026);
+  const mix=AC.createGain();
+  for(const [f,q,v] of [[rnd(320,380),5,1],[rnd(820,920),7,.55]]){const bp=AC.createBiquadFilter();bp.type='bandpass';bp.frequency.value=f;bp.Q.value=q;const g=AC.createGain();g.gain.value=v;o.connect(bp);bp.connect(g);g.connect(mix);}
+  const env=AC.createGain();env.gain.setValueAtTime(.0001,t);env.gain.exponentialRampToValueAtTime(.3,t+.012);env.gain.setValueAtTime(.3,t+.1);env.gain.exponentialRampToValueAtTime(.0001,t+.22);
+  mix.connect(env);env.connect(MASTER);o.start(t);o.stop(t+.25);}
+/* droid-style hurt warble: a whistling tone that wobbles fast and tumbles downward in little jumps */
+function r2hurt(when=0){const t=AC.currentTime+when,o=AC.createOscillator(),lfo=AC.createOscillator(),lg=AC.createGain(),env=AC.createGain();
+  o.type='sine';let f=rnd(1900,2400);o.frequency.setValueAtTime(f,t);
+  const steps=6+Math.floor(Math.random()*3);for(let k=1;k<=steps;k++){f*=rnd(.72,.9);o.frequency.exponentialRampToValueAtTime(f,t+k*.055);}
+  lfo.type='sine';lfo.frequency.setValueAtTime(30,t);lfo.frequency.linearRampToValueAtTime(12,t+.45);lg.gain.setValueAtTime(260,t);lg.gain.linearRampToValueAtTime(90,t+.45);
+  lfo.connect(lg);lg.connect(o.frequency);
+  env.gain.setValueAtTime(.0001,t);env.gain.exponentialRampToValueAtTime(.05,t+.02);env.gain.setValueAtTime(.05,t+.3);env.gain.exponentialRampToValueAtTime(.0001,t+.5);
+  o.connect(env);env.connect(MASTER);const send=AC.createGain();send.gain.value=.4;env.connect(send);send.connect(fxBus());
+  o.start(t);lfo.start(t);o.stop(t+.55);lfo.stop(t+.55);}
+/* soft body-thud for the splat, instead of a burst of static */
+function thud(){const t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.setValueAtTime(130,t);o.frequency.exponentialRampToValueAtTime(38,t+.25);
+  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.35,t+.008);g.gain.exponentialRampToValueAtTime(.0001,t+.3);o.connect(g);g.connect(MASTER);o.start(t);o.stop(t+.32);}
+/* humans standing on the ground die if NAN II's laser or NAN II himself hits them */
+function hurtHuman(h){if(h.gone)return;removeHuman(h);G.pops.push({x:h.x,y:h.y-22,t:1.2,txt:'OOF'});}
+function killPlayer(){const p=G.player;p.alive=false;G.shake=14;G.hitStop=.1;
+  const d=p.dir,k=1.25;
+  G.wreck.push({k:'body',x:p.x,y:p.y,vx:p.vx*.3+rnd(-60,60),vy:-rnd(80,160),a:0,va:rnd(-6,6),dir:d,life:4.5});
+  G.wreck.push({k:'bubble',x:wrap(p.x+d*3.9*k),y:p.y-6.3*k,vx:p.vx*.3+d*rnd(90,220),vy:-rnd(230,330),a:0,va:0,dir:d,life:6,r:4.6});
+  G.wreck.push({k:'collar',x:wrap(p.x+d*2),y:p.y-14*k,vx:rnd(-240,240),vy:-rnd(260,360),a:0,va:rnd(-14,14),dir:d,life:4.5});
+  G.wreck.push({k:'pack',x:wrap(p.x-d*14),y:p.y-5*k,vx:-d*rnd(80,170),vy:-rnd(110,210),a:0,va:rnd(-8,8),dir:d,life:4.5,sput:1.8});G.lives--;G.deadT=2.2;burst(p.x,p.y,C.ship,40,320);burst(p.x,p.y,C.ink,30,200);boom(1.1,.32);G.flash=1;G.alarmT=1.4;}
+function smartBomb(){G.flash=1;G.shake=12;G.hitStop=.08;bombSound();for(const e of G.enemies)if(!e.dead&&onScreen(e.x))killEnemy(e,true);G.bullets=G.bullets.filter(b=>!onScreen(b.x));}
+const pace=()=>Math.min(1.3,.2+.1*(G.wave-1));
+function shootAt(e){const p=G.player;if(!p.alive)return;const dx=wd(p.x,e.x),dy=p.y-e.y,d=Math.hypot(dx,dy)||1,s=80+150*pace();
+  G.bullets.push({x:e.x,y:e.y,vx:dx/d*s,vy:dy/d*s,life:3});tone(420,180,.08,'sawtooth',.018);}
+
+/* BOOST and the endurance wheel. thrust/top: how much harder and faster while boosting.
+   drain/refill: wheel per second (full lasts ~2.4 s; empty refills in ~3.6 s after a rest).
+   unlock: how full a spent wheel must get before boost works again. */
+const BOOST={thrust:2.2,top:920,drain:.42,refill:.28,rest:.7,unlock:.35,linger:.7,ease:900};
+/* THE GROUND (the boss, 2026-09-24): touch it and NAN II drives like a car; A launches him back
+   into the air. grav: how hard a slope pulls him; fall: gravity when a crest throws him;
+   brake: how much harder the stick bites against the roll than it drives; launch: A's kick;
+   headoff: how fast he must be driving for a human he runs down to lose its head. */
+const DRIVE={grav:900,fall:1500,brake:2.2,launch:430,headoff:380};
+const slopeAt=x=>(groundY(x+4)-groundY(x-4))/8;
+function touchdown(p,k){if(AC)tone(150,70,.14,'square',.035*k);
+  for(let i=0;i<Math.round(10*k);i++){const sd=Math.random()<.5?-1:1;
+    G.dust.push({x:wrap(p.x+rnd(-12,12)),y:groundY(p.x)-2,vx:sd*rnd(60,160)+p.vx*.2,vy:-rnd(30,90),life:rnd(.4,.8),max:.8,g:60});}}
+function land(p){p.drive=true;p.air=false;p.vy=0;p.tilt=Math.atan(slopeAt(p.x));p.boosting=false;touchdown(p,1);}
+function launch(p){p.drive=false;p.air=false;p.vy=-DRIVE.launch;p.launchT=.35;p.tilt=0;G.shake=Math.max(G.shake,3);
+  if(AC)tone(200,760,.22,'sawtooth',.035);touchdown(p,.8);}
+/* a human run down fast: the head flies, spinning, and rolls where it lands */
+function headOff(h,p){G.wreck.push({k:'head',x:h.x,y:h.y-12,vx:p.vx*.7+rnd(-40,40),vy:-rnd(280,420),a:0,va:rnd(-14,14),dir:1,life:4,r:3});
+  if(AC)tone(900,260,.14,'square',.03);}
+/* THE GUN TURNED UP (driving): the beam climbs straight up, carried along with NAN II's roll. It hits
+   the aliens above him -- and any human a lander is carrying off, so pick the moment. */
+function upLaser(l,dt){const step=l.spd*dt,from=l.y;l.y-=step;l.x=wrap(l.x+(l.vx||0)*dt);l.life-=dt;l.trail=Math.min(170,l.trail+step);
+  if(l.y<TOP){l.life=0;return;}
+  for(const e of G.enemies){if(e.dead)continue;const d=from-e.y;if(d>=-14&&d<=step+14&&Math.abs(wd(e.x,l.x))<16){killEnemy(e);l.life=0;return;}}
+  for(const h of G.humans){if(h.gone||h.state==='carried'||h.state==='walk')continue;const d=from-(h.y-3);if(d>=-6&&d<=step+6&&Math.abs(wd(h.x,l.x))<6){hurtHuman(h);l.life=0;return;}}}
+/* THE WHEELS, out while NAN II drives, turning with the ground he covers -- and the gun, turned up */
+function drawWheels(p){ctx.strokeStyle=C.ship;ctx.lineWidth=3;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(p.dir*9,-4);ctx.lineTo(p.dir*9,-19);ctx.stroke();for(const wx of [-9,9]){ctx.save();ctx.translate(wx,13);ctx.rotate(p.roll||0);
+  ctx.beginPath();ctx.arc(0,0,4.6,0,TAU);ctx.fillStyle='#000';ctx.fill();ctx.strokeStyle=C.ship;ctx.lineWidth=1.6;ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-4.6,0);ctx.lineTo(4.6,0);ctx.moveTo(0,-4.6);ctx.lineTo(0,4.6);ctx.lineWidth=1;ctx.stroke();ctx.restore();}}
+/* the wheel rides behind the ship: hidden when full, drains while boosting, blinks dim when spent */
+function drawWheel(x,y,p){if(p.wheelT<=0)return;const cx=x-p.dir*36,cy=y-26,r=11;
+  ctx.save();ctx.globalAlpha=Math.min(1,p.wheelT/BOOST.linger*1.5);ctx.lineWidth=4;ctx.lineCap='butt';
+  ctx.strokeStyle=C.faint;ctx.beginPath();ctx.arc(cx,cy,r,0,TAU);ctx.stroke();
+  if(p.stam>0&&!(p.boostLock&&Math.floor(T*8)%2)){ctx.strokeStyle=p.boostLock?C.dim:C.ink;
+    ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+TAU*p.stam);ctx.stroke();}
+  ctx.restore();}
+
+/* ---------- update ---------- */
+function update(dt,inp){
+  if(G.state==='over'){G.overT+=dt;if(G.overT>1&&(inp.startP||inp.fireP||inp.boostP))newGame();return;}
+  if(inp.startP){G.state=G.state==='paused'?'play':'paused';G.menu=0;}
+  if(G.state==='paused'){menuInput(inp);return;}
+  G.shake=Math.max(0,G.shake-dt*28);
+  if(G.hitStop>0){G.hitStop-=dt;return;}
+  const p=G.player,sp=pace();
+  G.comboT=Math.max(0,G.comboT-dt);if(!G.comboT)G.combo=0;
+  if(G.pw){G.pw.t-=dt;if(G.pw.t<=0)endPower();}
+  G.msgT-=dt;G.alarmT=Math.max(0,G.alarmT-dt);G.flash=Math.max(0,G.flash-dt*2.5);
+
+  if(p.alive){
+    /* on the ground, A launches him */
+    if(p.drive&&inp.boostP)launch(p);
+    /* BOOST: hold A (or shift) while flying and moving to burn the endurance wheel for
+       speed. The wheel refills after a short rest; run it dry and boost locks until it is a
+       third full again, so it cannot be feathered at empty. */
+    const want=!p.drive&&inp.boost&&inp.x!==0&&!p.boostLock&&p.stam>0;
+    if(want&&!p.boosting&&AC)tone(170,520,.18,'sawtooth',.022);
+    p.boosting=want;
+    if(p.boosting){p.stam=Math.max(0,p.stam-BOOST.drain*dt);p.regenT=BOOST.rest;
+      if(p.stam<=0){p.boostLock=true;p.boosting=false;if(AC)tone(260,80,.35,'square',.03);}}
+    else{p.regenT=Math.max(0,p.regenT-dt);if(p.regenT<=0)p.stam=Math.min(1,p.stam+BOOST.refill*dt);
+      if(p.boostLock&&p.stam>=BOOST.unlock){p.boostLock=false;if(AC)tone(440,660,.08,'triangle',.02);}}
+    p.wheelT=(p.stam<1||p.boosting)?BOOST.linger:Math.max(0,p.wheelT-dt);
+    p.thrust=inp.x!==0;p.lift=!p.drive&&inp.y<-.3?1:0;if(inp.x!==0){p.dir=inp.x>0?1:-1;
+      /* on the ground, pushing against the roll brakes: it bites harder than it drives */
+      p.vx+=inp.x*SET.thrust*255*dt*(p.boosting?BOOST.thrust:1)*(p.drive&&p.vx*inp.x<0?DRIVE.brake:1);}
+    p.vx-=p.vx*SET.fric*.23*dt;
+    if(p.drive&&!p.air){const s=slopeAt(p.x);p.vx+=DRIVE.grav*s/Math.sqrt(1+s*s)*dt;}   /* downhill speeds him up, uphill slows him */
+    /* top speed: 560, or BOOST.top while boosting. After a boost the LIMIT eases back down
+       to 560 (BOOST.ease a second), so the ship slows smoothly instead of snapping -- and it
+       is a hard limit: no Thrust or Friction setting carries him past it. (Easing off only
+       the excess, as it first did, was outrun by strong Thrust and low Friction: plain
+       flight ran away to ~1500 and boost, held at 920, was slower.) */
+    p.top=p.boosting?BOOST.top:Math.max(560,(p.top||560)-BOOST.ease*dt);
+    p.vx=Math.max(-p.top,Math.min(p.top,p.vx));
+    p.x=wrap(p.x+p.vx*dt);
+    if(p.drive){/* the wheels on the ground -- or in the air, thrown off a crest, until gravity brings them down */
+      const gy=groundY(p.x)-17;p.vy=(p.vy||0)+DRIVE.fall*dt;p.y+=p.vy*dt;
+      if(p.y>=gy){if(p.air&&p.vy>260)touchdown(p,.5);p.y=gy;p.vy=slopeAt(p.x)*p.vx;p.air=false;}else p.air=true;
+      if(!p.air)p.tilt=(p.tilt||0)+(Math.atan(slopeAt(p.x))-(p.tilt||0))*Math.min(1,12*dt);
+      p.roll=(p.roll||0)+p.vx*dt/5.75;}
+    else{/* eased climb and dive: velocity glides toward the stick instead of snapping */
+      const tv=inp.y*320;p.vy=(p.vy||0)+(tv-(p.vy||0))*Math.min(1,(inp.y?3.6:4.2)*dt);p.y+=p.vy*dt;
+      const lo=TOP+16,hi=groundY(p.x)-17;if(p.y<lo){p.y=lo;p.vy=Math.max(0,p.vy);}
+      if(p.y>hi){p.y=hi;p.vy=Math.min(0,p.vy);if(!(p.launchT>0))land(p);}}   /* touching the ground: he drives */
+    p.launchT=Math.max(0,(p.launchT||0)-dt);
+    p.ax=Math.max(-3000,Math.min(3000,(p.vx-(p.lvx??p.vx))/dt));p.ay=Math.max(-3000,Math.min(3000,(p.vy-(p.lvy??p.vy))/dt));p.lvx=p.vx;p.lvy=p.vy;
+    /* jet trails: motes shed from the back jet (and the foot nubs when climbing); longer-lived at speed */
+    const spd=Math.abs(p.vx)/560;G.trailAcc+=(p.drive?0:p.boosting?200:p.thrust?90:18)*dt;
+    while(G.trailAcc>=1){G.trailAcc--;const lf=.3+spd*.7;G.trail.push({x:wrap(p.x-p.dir*20+rnd(-2,2)),y:p.y-6+rnd(-2.5,2.5),vx:p.vx*.15-p.dir*rnd(50,120),vy:rnd(-14,14),life:lf,max:lf});}
+    if(p.lift&&Math.random()<dt*60)for(const fx of [8,-7.5])G.trail.push({x:wrap(p.x+p.dir*fx+rnd(-1,1)),y:p.y+15,vx:p.vx*.2,vy:rnd(70,130),life:.3,max:.3});
+    /* ground dust when skimming low */
+    const gap=groundY(p.x)-(p.y+14);if(gap<42){G.dustAcc+=(1-gap/42)*(p.drive?Math.abs(p.vx)/5:30+Math.abs(p.vx)/6)*dt;
+      while(G.dustAcc>=1){G.dustAcc--;const sd=Math.random()<.5?-1:1;G.dust.push({x:wrap(p.x+rnd(-10,10)),y:groundY(p.x)-2,vx:sd*rnd(40,130)+p.vx*.25,vy:-rnd(15,60),life:rnd(.4,.8),max:.8,g:60});}}
+    p.inv=Math.max(0,p.inv-dt);p.fireCd-=dt;
+    if(inp.fireP||(inp.fire&&p.fireCd<=0)){const rf=G.pw&&G.pw.k==='rapid';fireLaser();if(rf){{const l=G.lasers[G.lasers.length-1];G.lasers.push(l.up?{...l,x:wrap(l.x-p.dir*8)}:{...l,y:p.y-6});}}p.fireCd=rf?.06:.16;}
+    if(inp.bombP&&G.bombs>0){G.bombs--;smartBomb();}
+  }else{G.deadT-=dt;if(G.deadT<=0){if(G.lives>0){p.alive=true;p.inv=2.5;p.vx=0;p.vy=0;p.y=240;p.drive=false;p.air=false;p.tilt=0;p.stam=1;p.boosting=false;p.boostLock=false;p.regenT=0;G.bullets=[];}else{G.state='over';G.overT=0;saveHigh();}}}
+
+  {/* smooth-damped camera swing: eases in and out, speed-capped, lead grows with speed */
+    const lead=W*(.12+.08*Math.min(1,Math.abs(p.vx)/300)),tgt=W/2-p.dir*lead;
+    const st=.85,om=2/st,x=om*dt,e=1/(1+x+.48*x*x+.235*x*x*x);let ch=G.camOff-tgt;const mx=420*st;ch=Math.max(-mx,Math.min(mx,ch));
+    const tmp=(G.camVel+om*ch)*dt;G.camVel=(G.camVel-om*tmp)*e;G.camOff=(G.camOff-ch)+(ch+tmp)*e;}G.camX=wrap(p.x-G.camOff);
+
+  for(const l of G.lasers){if(l.up){upLaser(l,dt);continue;}const step=l.spd*dt,from=l.x;l.x=wrap(l.x+l.dir*step);l.life-=dt;l.trail=Math.min(170,l.trail+step);
+    for(const e of G.enemies){if(e.dead)continue;const d=wd(e.x,from)*l.dir;if(d>=-14&&d<=step+14&&Math.abs(e.y-l.y)<13){killEnemy(e);l.life=0;break;}}
+    if(l.life>0)for(const h of G.humans){if(h.gone||h.state==='carried')continue;const d=wd(h.x,from)*l.dir;if(d>=-6&&d<=step+6&&Math.abs(h.y-3-l.y)<12){hurtHuman(h);l.life=0;break;}}}
+  G.lasers=G.lasers.filter(l=>l.life>0);
+  /* SLOW TIME: the world below runs at a third speed; NAN II and his lasers stay at full speed */
+  if(G.pw&&G.pw.k==='slow')dt*=.33;
+
+  for(const e of G.enemies){if(e.dead)continue;
+    if(e.kind==='lander'){e.bob+=dt*2;
+      if(e.target&&e.target.gone){e.target=null;e.state='seek';}
+      if(e.state==='seek'){
+        if(!e.target){const free=G.humans.filter(h=>h.state==='walk'&&!h.claimed);
+          if(free.length){free.sort((a,b)=>Math.abs(wd(a.x,e.x))-Math.abs(wd(b.x,e.x)));e.target=free[0];free[0].claimed=true;}}
+        let want;if(e.target){const d=wd(e.target.x,e.x);want=Math.sign(d)*75*sp;if(Math.abs(d)<4)e.state='down';}else want=Math.sin(e.bob*.3)*50*sp;
+        e.vx+=(want-e.vx)*Math.min(1,2*dt);e.x=wrap(e.x+e.vx*dt);e.y+=(TOP+100+Math.sin(e.bob)*30-e.y)*Math.min(1,dt);
+      }else if(e.state==='down'){const h=e.target;e.x=h.x;e.y+=75*sp*dt;
+        if(e.y>=h.y-18){h.state='held';e.state='up';tone(300,620,.35,'triangle',.05);if(onScreen(e.x)||Math.abs(wd(e.x,p.x))<1200){say('Warning! A human is being taken',1.6);G.alarmT=1.2;}}
+      }else if(e.state==='up'){const h=e.target;e.y-=48*sp*dt;h.x=e.x;h.y=e.y+18;
+        if(e.y<TOP+12){removeHuman(h);toMutant(e);say('A human was lost',1.6);}}
+      e.cd-=dt;if(e.cd<=0){e.cd=rnd(1.8,3.6)/sp;if(onScreen(e.x))shootAt(e);}
+    }else{
+      const dx=wd(p.x,e.x),dy=p.y-e.y,msp=210*sp;
+      e.vx+=(Math.sign(dx)*msp-e.vx)*Math.min(1,3*dt);
+      e.vy+=((Math.abs(dx)<300?Math.sign(dy)*130*sp:0)+rnd(-160,160)*sp-e.vy)*Math.min(1,4*dt);
+      e.x=wrap(e.x+e.vx*dt);e.y=Math.max(TOP+12,Math.min(groundY(e.x)-14,e.y+e.vy*dt));
+      e.cd-=dt;if(e.cd<=0){e.cd=rnd(1,2.2)/sp;if(onScreen(e.x))shootAt(e);}
+    }
+    if(p.alive&&p.inv<=0&&Math.abs(wd(e.x,p.x))<(G.pw&&G.pw.k==='shield'?30:18)&&Math.abs(e.y-p.y)<(G.pw&&G.pw.k==='shield'?28:14)){killEnemy(e);if(!(G.pw&&G.pw.k==='shield'))killPlayer();}
+  }
+  G.enemies=G.enemies.filter(e=>!e.dead);
+  /* the scale bird: flaps across now and then; ram it with NAN II to change the scale */
+  if(!G.bird){G.birdT-=dt;if(G.birdT<=0){const side=Math.random()<.5?-1:1;
+      G.bird={x:wrap(p.x+side*W*.75),y0:rnd(TOP+80,360),y:0,vx:-side*rnd(70,110),t:rnd(0,9),life:16};G.birdT=rnd(20,34);
+      tone(1320,1760,.12,'triangle',.03);setTimeout(()=>tone(1760,2200,.12,'triangle',.03),140);}}
+  else{const b=G.bird;b.t+=dt;b.life-=dt;b.x=wrap(b.x+b.vx*dt);b.y=b.y0+Math.sin(b.t*1.7)*45;
+    if(p.alive&&Math.abs(wd(b.x,p.x))<24&&Math.abs(b.y-p.y)<22){
+      grantPower();addScore(1000,b);G.shake=Math.max(G.shake,6);
+      burst(b.x,b.y,C.ink,36,300);for(let i=0;i<24;i++){const a=i/24*TAU;G.parts.push({x:b.x,y:b.y,vx:Math.cos(a)*220,vy:Math.sin(a)*220,life:.9,max:1,col:C.ink});}
+      G.flash=.5;boom(.4,.12);G.bird=null;}
+    else if(b.life<=0&&!onScreen(b.x))G.bird=null;}
+
+  for(const b of G.bullets){b.x=wrap(b.x+b.vx*dt);b.y+=b.vy*dt;b.life-=dt;
+    if(p.alive&&p.inv<=0&&Math.abs(wd(b.x,p.x))<(G.pw&&G.pw.k==='shield'?28:10)&&Math.abs(b.y-p.y)<(G.pw&&G.pw.k==='shield'?26:9)){b.life=0;if(G.pw&&G.pw.k==='shield'){burst(b.x,b.y,C.ink,6,120);}else killPlayer();}}
+  G.bullets=G.bullets.filter(b=>b.life>0&&b.y>TOP&&b.y<H);
+
+  for(const h of G.humans){
+    if(h.state==='walk'){if(Math.random()<dt*.2)h.vx=-h.vx;h.x=wrap(h.x+h.vx*dt);h.y=groundY(h.x)-6;h.safe=Math.max(0,(h.safe||0)-dt);
+      if(p.alive&&h.safe<=0&&Math.abs(wd(h.x,p.x))<15&&Math.abs(h.y-p.y)<20){
+        /* run down while he drives fast: the head goes flying */
+        if(p.drive&&Math.abs(p.vx)>DRIVE.headoff)headOff(h,p);hurtHuman(h);}}
+    else if(h.state==='fall'){const ff=G.pw&&G.pw.k==='feather';h.vy+=(ff?40:110)*dt;if(ff)h.vy=Math.min(h.vy,45);h.y+=h.vy*dt;
+      if(p.alive&&Math.abs(wd(h.x,p.x))<22&&Math.abs(h.y-p.y)<22){h.state='carried';h.th=0;h.om=0;addScore(500,h);tone(660,1320,.2,'triangle',.06);}
+      else if(h.y>=groundY(h.x)-6){if(groundY(h.x)-6-(h.fy0??h.y)>90&&!(G.pw&&G.pw.k==='feather')){h.gone=true;G.splats.push({x:h.x,t:8,seed:Math.random()});burst(h.x,groundY(h.x)-2,C.ink,14,120);splatSound();G.pops.push({x:h.x,y:h.y-20,t:1.4,txt:'SPLAT'});}else{h.state='walk';h.claimed=false;h.safe=1.5;h.y=groundY(h.x)-6;addScore(250,h);}}}
+    else if(h.state==='carried'){if(!p.alive){h.state='fall';h.vy=0;h.fy0=h.y;}else{
+      /* a pendulum hanging from NAN II's base: swings with his acceleration */
+      const L=22,gx=-(p.ax||0),gy=600-(p.ay||0);h.om=(h.om||0)+((gx*Math.cos(h.th||0)-gy*Math.sin(h.th||0))/L-1.6*(h.om||0))*dt;
+      h.th=Math.max(-1.35,Math.min(1.35,(h.th||0)+h.om*dt));h.x=wrap(p.x+Math.sin(h.th)*L);h.y=p.y+14+Math.cos(h.th)*L;
+      if(p.y>groundY(p.x)-52){h.state='walk';h.claimed=false;h.safe=2;h.y=groundY(h.x)-6;addScore(500,h);say('Human home safe',1.2);tone(880,1760,.25,'triangle',.06);}}}
+  }
+  G.humans=G.humans.filter(h=>!h.gone);
+  if(G.humans.length===0&&!G.fallen){G.fallen=true;for(const e of G.enemies)if(e.kind==='lander')toMutant(e);say('The humans are gone',2.6);}
+
+  G.spawnT-=dt;
+  if(G.toSpawn>0&&(G.spawnT<=0||G.enemies.length===0)){const n=Math.min(5,G.toSpawn);for(let i=0;i<n;i++)spawnLander();G.toSpawn-=n;G.spawnT=9;}
+  if(G.toSpawn===0&&G.enemies.length===0){G.waveT+=dt;
+    if(!G.waveDone){G.waveDone=true;const b=G.humans.length*100*Math.min(G.wave,5);addScore(b,null);say('Wave '+G.wave+' clear, bonus '+b,2.6);}
+    if(G.waveT>3)startWave();}
+
+  for(const q of G.parts){q.x=wrap(q.x+q.vx*dt);q.y+=q.vy*dt;q.vx*=1-1.5*dt;q.vy*=1-1.5*dt;q.life-=dt;}
+  G.parts=G.parts.filter(q=>q.life>0);
+  for(const q of G.trail){q.x=wrap(q.x+q.vx*dt);q.y+=q.vy*dt;q.vx*=1-2*dt;q.life-=dt;}G.trail=G.trail.filter(q=>q.life>0);
+  for(const q of G.dust){q.x=wrap(q.x+q.vx*dt);q.y+=q.vy*dt;q.vy+=q.g*dt;q.vx*=1-2.5*dt;q.life-=dt;}G.dust=G.dust.filter(q=>q.life>0);
+  for(const r of G.rings)r.t+=dt;G.rings=G.rings.filter(r=>r.t<.35);
+  const phys=(q,bounce)=>{q.vy+=520*dt;q.x=wrap(q.x+q.vx*dt);q.y+=q.vy*dt;q.a+=q.va*dt;const gy=groundY(q.x)-(q.r||1);
+    if(q.y>gy){q.y=gy;q.vy=Math.abs(q.vy)>40?-q.vy*bounce:0;q.vx*=.65;q.va*=.6;q.ground=true;}else q.ground=false;q.life-=dt;};
+  for(const q of G.debris)phys(q,.35);G.debris=G.debris.filter(q=>q.life>0);
+  for(const q of G.wreck){phys(q,.4);
+    if((q.k==='bubble'||q.k==='head')&&q.ground){q.vx*=Math.pow(.55,dt);q.a+=q.vx/q.r*dt;}
+    if(q.k==='pack'&&q.sput>0){q.sput-=dt;if(Math.random()<dt*40)G.dust.push({x:q.x,y:q.y,vx:rnd(-20,20),vy:-rnd(30,70),life:rnd(.5,1),max:1,g:-20});}}
+  G.wreck=G.wreck.filter(q=>q.life>0);
+  for(const q of G.splats)q.t-=dt;G.splats=G.splats.filter(q=>q.t>0);
+  for(const q of G.pops){q.t-=dt;q.y-=22*dt;}G.pops=G.pops.filter(q=>q.t>0);
+}
+
+/* ===== NAN II FACE FONT: Jody's own lettering, rebuilt as strokes on a 5x7 grid =====
+   Square shoulders, softened corners, serifed I, all capitals, monospaced. */
+const GLYPHS=(()=>{const O=[[1,0],[4,0],[5,1],[5,6],[4,7],[1,7],[0,6],[0,1],[1,0]];
+const g={
+A:[[[0,7],[0,1],[1,0],[4,0],[5,1],[5,7]],[[0,4],[5,4]]],
+B:[[[0,0],[4,0],[5,1],[5,2.5],[4,3.5],[0,3.5]],[[4,3.5],[5,4.5],[5,6],[4,7],[0,7],[0,0]]],
+C:[[[5,0],[1,0],[0,1],[0,6],[1,7],[5,7]]],
+D:[[[0,0],[4,0],[5,1],[5,6],[4,7],[0,7],[0,0]]],
+E:[[[5,0],[0,0],[0,7],[5,7]],[[0,3.5],[4,3.5]]],
+F:[[[5,0],[0,0],[0,7]],[[0,3.5],[4,3.5]]],
+G:[[[5,0],[1,0],[0,1],[0,6],[1,7],[4,7],[5,6],[5,4],[3,4]]],
+H:[[[0,0],[0,7]],[[5,0],[5,7]],[[0,3.5],[5,3.5]]],
+I:[[[1,0],[4,0]],[[2.5,0],[2.5,7]],[[1,7],[4,7]]],
+J:[[[1,0],[5,0]],[[4,0],[4,6],[3,7],[1,7],[0,6]]],
+K:[[[0,0],[0,7]],[[5,0],[1.5,3.5],[0,3.5]],[[1.5,3.5],[5,7]]],
+L:[[[0,0],[0,7],[5,7]]],
+M:[[[0,7],[0,0],[2.5,3],[5,0],[5,7]]],
+N:[[[0,7],[0,0],[5,7],[5,0]]],
+O:[O],
+P:[[[0,7],[0,0],[4,0],[5,1],[5,3],[4,4],[0,4]]],
+Q:[O,[[3,5],[5,7.6]]],
+R:[[[0,7],[0,0],[4,0],[5,1],[5,3],[4,4],[0,4]],[[2.5,4],[5,7]]],
+S:[[[5,0],[1,0],[0,1],[0,2.5],[1,3.5],[4,3.5],[5,4.5],[5,6],[4,7],[0,7]]],
+T:[[[0,0],[5,0]],[[2.5,0],[2.5,7]]],
+U:[[[0,0],[0,6],[1,7],[4,7],[5,6],[5,0]]],
+V:[[[0,0],[0,4],[2.5,7],[5,4],[5,0]]],
+W:[[[0,0],[0,7],[2.5,4],[5,7],[5,0]]],
+X:[[[0,0],[5,7]],[[5,0],[0,7]]],
+Y:[[[0,0],[2.5,3.5],[5,0]],[[2.5,3.5],[2.5,7]]],
+Z:[[[0,0],[5,0],[0,7],[5,7]]],
+0:[O,[[4,1.5],[1,5.5]]],
+1:[[[1,1.5],[2.5,0],[2.5,7]],[[1,7],[4,7]]],
+2:[[[0,1],[1,0],[4,0],[5,1],[5,2.5],[4,3.5],[1,3.5],[0,4.5],[0,7],[5,7]]],
+3:[[[0,0],[4,0],[5,1],[5,2.5],[4,3.5],[1.5,3.5]],[[4,3.5],[5,4.5],[5,6],[4,7],[0,7]]],
+4:[[[4,7],[4,0],[0,4.5],[5,4.5]]],
+5:[[[5,0],[0,0],[0,3.5],[4,3.5],[5,4.5],[5,6],[4,7],[0,7]]],
+6:[[[5,0],[1,0],[0,1],[0,6],[1,7],[4,7],[5,6],[5,4.5],[4,3.5],[0,3.5]]],
+7:[[[0,0],[5,0],[5,1.5],[2,7]]],
+8:[[[1,0],[4,0],[5,1],[5,2.5],[4,3.5],[1,3.5],[0,2.5],[0,1],[1,0]],[[1,3.5],[0,4.5],[0,6],[1,7],[4,7],[5,6],[5,4.5],[4,3.5]]],
+9:[[[5,3.5],[1,3.5],[0,2.5],[0,1],[1,0],[4,0],[5,1],[5,6],[4,7],[0,7]]],
+'.':[[[2.5,7],[2.5,7]]],
+',':[[[2.5,6.5],[1.8,8]]],
+'!':[[[2.5,0],[2.5,4.5]],[[2.5,7],[2.5,7]]],
+'?':[[[0,1],[1,0],[4,0],[5,1],[5,2.5],[4,3.5],[2.5,3.5],[2.5,4.6]],[[2.5,7],[2.5,7]]],
+':':[[[2.5,2],[2.5,2]],[[2.5,6],[2.5,6]]],
+"'":[[[2.5,0],[2.5,1.6]]],
+'-':[[[1,3.5],[4,3.5]]],
+'+':[[[0.5,3.5],[4.5,3.5]],[[2.5,1.5],[2.5,5.5]]],
+'>':[[[1,1],[4,3.5],[1,6]]],
+'<':[[[4,1],[1,3.5],[4,6]]],
+'/':[[[5,0],[0,7]]],
+'(':[[[3.5,0],[2,1.5],[2,5.5],[3.5,7]]],
+')':[[[1.5,0],[3,1.5],[3,5.5],[1.5,7]]],
+'=':[[[0.5,2.5],[4.5,2.5]],[[0.5,4.5],[4.5,4.5]]],
+'~':[[[0,4],[1,3],[2,3],[3,4],[4,4],[5,3]]]
+};return g;})();
+const GLYPH_ADV=8,GLYPH_XS=1.2;
+/* draws with the current fillStyle, font size and textAlign, so every old fillText call keeps working */
+function txt(str,x,y){str=String(str).toUpperCase();const size=parseFloat(ctx.font)||16,u=size/8.5,n=str.length,w=(n*GLYPH_ADV-(GLYPH_ADV-5*GLYPH_XS))*u;
+  let x0=ctx.textAlign==='center'?x-w/2:ctx.textAlign==='right'?x-w:x;const top=y-7*u;
+  ctx.save();ctx.strokeStyle=ctx.fillStyle;ctx.lineWidth=u*1.4;ctx.lineCap='square';ctx.lineJoin='round';
+  for(let i=0;i<n;i++){const ch=str[i],gx=x0+i*GLYPH_ADV*u;
+    if(ch==='#'){ctx.fillRect(gx,top+u,5*GLYPH_XS*u,5*u);continue;}
+    const g=GLYPHS[ch];if(!g)continue;ctx.beginPath();
+    for(const st of g){st.forEach(([a,b],k)=>{const px=gx+a*GLYPH_XS*u,py=top+b*u;k?ctx.lineTo(px,py):ctx.moveTo(px,py);});}
+    ctx.stroke();}
+  ctx.restore();}
+
+/* ---------- drawing ---------- */
+let T=0;
+function drawShip(x,y,dir,thrust,scale=1,lift=0){ctx.save();ctx.translate(x,y);ctx.scale(dir*scale*1.25,scale*1.25);
+  ctx.lineJoin='round';ctx.lineCap='round';
+  /* back jet: teardrop flame with inner cone */
+  const L=thrust?22+rnd(0,8):0;
+  if(L){ctx.beginPath();ctx.moveTo(-15,-8.5);ctx.quadraticCurveTo(-18,-5,-15,-1.5);ctx.quadraticCurveTo(-15-L*.45,-2,-15-L,-7);ctx.quadraticCurveTo(-15-L*.5,-9.5,-15,-8.5);
+  ctx.fillStyle=C.faint;ctx.fill();ctx.strokeStyle=C.ship;ctx.lineWidth=1.3;ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-15.5,-7.5);ctx.lineTo(-15-L*.45,-6.2);ctx.lineTo(-15.5,-3);ctx.stroke();}
+  /* foot jets from the bottom nubs */
+  const F=lift>0?9+rnd(0,5):0;
+  if(F)for(const fx of [6.5,-6]){ctx.beginPath();ctx.moveTo(fx-2.2,11.5);ctx.lineTo(fx,11.5+F);ctx.lineTo(fx+2.2,11.5);ctx.closePath();ctx.fillStyle=C.faint;ctx.fill();ctx.stroke();}
+  /* body: hooked collar, open notch holding the bubble, round front lobe, flat base */
+  ctx.fillStyle=C.ship;ctx.beginPath();
+  ctx.moveTo(7,-14);ctx.quadraticCurveTo(2,-17,-3,-15);ctx.quadraticCurveTo(-9,-14,-12,-9);
+  ctx.lineTo(-12,9);ctx.lineTo(11,10);
+  ctx.quadraticCurveTo(14,8.5,13,5);ctx.quadraticCurveTo(12,0.5,8.3,0.2);ctx.lineTo(2,-0.5);
+  ctx.quadraticCurveTo(-3,-1.5,-4,-6.5);ctx.quadraticCurveTo(-3,-12.5,2.5,-12.3);ctx.lineTo(6.3,-12);ctx.closePath();ctx.fill();
+  /* jetpack on the back */
+  ctx.fillRect(-15,-10,3.6,12);
+  ctx.save();ctx.globalCompositeOperation='destination-out';ctx.fillRect(-11.9,-10,.9,12);ctx.restore();
+  /* bottom nubs */
+  ctx.fillRect(3.7,9.5,6,2);ctx.fillRect(-8.3,9.5,4.6,2);
+  /* the bubble with its bar */
+  ctx.strokeStyle=C.ship;ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(3.9,-6.3,3.6,0,TAU);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(3.9,-9.6);ctx.lineTo(3.9,-3);ctx.stroke();
+  ctx.restore();}
+function drawLander(x,y){ctx.fillStyle=C.lander;ctx.beginPath();ctx.ellipse(x,y,14,5.5,0,0,TAU);ctx.fill();
+  ctx.beginPath();ctx.arc(x,y-3,7,Math.PI,0);ctx.fill();
+  ctx.strokeStyle=C.lander;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x-8,y+4);ctx.lineTo(x-12,y+10);ctx.moveTo(x,y+5);ctx.lineTo(x,y+11);ctx.moveTo(x+8,y+4);ctx.lineTo(x+12,y+10);ctx.stroke();
+  ctx.clearRect(x-6,y-1,3,2);ctx.clearRect(x-1,y-1,3,2);ctx.clearRect(x+4,y-1,3,2);}
+function drawBird(b,x){const y=b.y,dir=b.vx>0?1:-1,f=Math.sin(b.t*11);
+  ctx.save();ctx.translate(x,y);ctx.scale(dir,1);ctx.strokeStyle=C.ink;ctx.fillStyle=C.ink;ctx.lineWidth=2;ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.beginPath();ctx.ellipse(0,0,9,4.5,0,0,TAU);ctx.fill();
+  ctx.beginPath();ctx.arc(10,-3,4,0,TAU);ctx.fill();
+  ctx.beginPath();ctx.moveTo(13,-4);ctx.lineTo(19,-2);ctx.lineTo(13,-1);ctx.fill();
+  ctx.clearRect(10,-5,2,2);
+  ctx.beginPath();ctx.moveTo(-3,-2);ctx.quadraticCurveTo(-6,-10*f-6,-16,-16*f);ctx.moveTo(2,-2);ctx.quadraticCurveTo(0,-10*f-4,-8,-14*f);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-9,0);ctx.lineTo(-17,-4);ctx.moveTo(-9,1);ctx.lineTo(-18,1);ctx.moveTo(-9,2);ctx.lineTo(-17,6);ctx.stroke();
+  for(let i=0;i<3;i++){const a=b.t*4+i*2.1;ctx.fillRect(-22-i*6+Math.cos(a)*2,Math.sin(a)*5-1,2,2);}
+  ctx.restore();}
+function drawWreck(q,x){ctx.save();ctx.translate(x,q.y);ctx.rotate(q.a);ctx.scale(q.dir*1.25,1.25);ctx.fillStyle=C.ship;ctx.strokeStyle=C.ship;ctx.lineJoin='round';ctx.lineCap='round';
+  if(q.k==='body'){ctx.beginPath();ctx.moveTo(-10,-4);ctx.lineTo(-12.5,2);ctx.lineTo(-11,9);ctx.lineTo(11,10);ctx.quadraticCurveTo(14,8.5,13,5);ctx.quadraticCurveTo(12,.5,8.3,.2);ctx.lineTo(2,-.5);ctx.quadraticCurveTo(-3,-1.5,-4,-6.5);ctx.closePath();ctx.fill();ctx.fillRect(3.7,9.5,6,2);ctx.fillRect(-8.3,9.5,4.6,2);}
+  else if(q.k==='bubble'){ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(0,0,3.6,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(0,-3.3);ctx.lineTo(0,3.3);ctx.stroke();}
+  else if(q.k==='head'){ctx.lineWidth=1.8;ctx.beginPath();ctx.arc(0,0,2.6,0,TAU);ctx.stroke();ctx.fillRect(.6,-1,1.2,1.2);}
+  else if(q.k==='collar'){ctx.lineWidth=2.6;ctx.beginPath();ctx.moveTo(7,-2);ctx.quadraticCurveTo(2,-5,-3,-3);ctx.quadraticCurveTo(-8,0,-10,8);ctx.stroke();}
+  else{ctx.beginPath();ctx.moveTo(2,-5);ctx.lineTo(-1.7,-4);ctx.lineTo(-4.3,5.4);ctx.lineTo(-2.7,7.4);ctx.closePath();ctx.fill();
+    if(q.sput>0&&Math.random()<.55){ctx.globalAlpha*=.8;ctx.beginPath();ctx.moveTo(-4,-1);ctx.lineTo(-4-rnd(5,12),1.5);ctx.lineTo(-4,4);ctx.fill();}}
+  ctx.restore();}
+function drawMutant(x,y){const j=Math.sin(T*30)*1.5;ctx.fillStyle=C.mutant;ctx.beginPath();ctx.moveTo(x,y-11+j);ctx.lineTo(x+11,y);ctx.lineTo(x,y+11-j);ctx.lineTo(x-11,y);ctx.closePath();ctx.fill();
+  ctx.clearRect(x-4,y-2,3,3);ctx.clearRect(x+1,y-2,3,3);}
+function drawHuman(x,y,flail){ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.lineCap='round';
+  ctx.beginPath();ctx.arc(x,y-12,3,0,TAU);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x,y-9);ctx.lineTo(x,y+1);
+  if(flail){const a=Math.sin(T*22+x),b=Math.sin(T*18+x*1.3);
+    ctx.moveTo(x,y-7);ctx.lineTo(x-7,y-13+a*4);ctx.moveTo(x,y-7);ctx.lineTo(x+7,y-13-a*4);
+    ctx.moveTo(x,y+1);ctx.lineTo(x-5+b*2,y+7-b*2);ctx.moveTo(x,y+1);ctx.lineTo(x+5+b*2,y+7+b*2);}
+  else{const w=Math.sin(T*8+x)*3;
+    ctx.moveTo(x,y-7);ctx.lineTo(x-w,y-2);ctx.moveTo(x,y-7);ctx.lineTo(x+w,y-2);
+    ctx.moveTo(x,y+1);ctx.lineTo(x-w,y+6);ctx.moveTo(x,y+1);ctx.lineTo(x+w,y+6);}
+  ctx.stroke();}
+function drawSplat(x,y,q){ctx.globalAlpha=Math.min(1,q.t/2);ctx.strokeStyle=C.ink;ctx.fillStyle=C.ink;ctx.lineWidth=2;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(x-8,y);ctx.lineTo(x+6,y);ctx.moveTo(x-3,y);ctx.lineTo(x-9,y-3);ctx.moveTo(x+1,y);ctx.lineTo(x+7,y-4);
+  ctx.moveTo(x+6,y);ctx.lineTo(x+12,y-1);ctx.moveTo(x+6,y);ctx.lineTo(x+11,y+1);ctx.stroke();
+  ctx.beginPath();ctx.ellipse(x-12,y-1,3.5,2,0,0,TAU);ctx.stroke();
+  for(let i=0;i<7;i++){const a=q.seed*50+i*2.1;ctx.fillRect(x+Math.cos(a)*(12+i*2),y-Math.abs(Math.sin(a))*6-1,2,2);}
+  ctx.globalAlpha=1;}
+function draw(){const cam=G?G.camX:titleCam;const sx=x=>wd(x,cam);
+  ctx.clearRect(0,0,W,H);
+  const vsp=G&&G.player.alive?G.player.vx:0,streak=Math.max(0,(Math.abs(vsp)-250)/310)*28;
+  for(const s of stars){const x=((s.x-cam*.35)%W+W)%W;ctx.globalAlpha=s.b*(.75+.25*Math.sin(T*2+s.x));ctx.fillStyle=C.ink;
+    if(streak>1){const l=streak*s.b;ctx.fillRect(vsp>0?x:x-l,s.y,l+s.r,s.r);}else ctx.fillRect(x,s.y,s.r,s.r);}ctx.globalAlpha=1;
+  const mx=(((WW*.8-cam*.12)%W)+W)%W;ctx.strokeStyle=C.faint;ctx.lineWidth=2;ctx.beginPath();ctx.arc(mx,150,46,0,TAU);ctx.stroke();ctx.beginPath();ctx.arc(mx+14,150,40,-1.1,1.1);ctx.stroke();
+
+  ctx.fillStyle=C.faint;{const off=((cam%16)+16)%16;for(let x=-off;x<=W;x+=16){const wx=wrap(cam+x),gy=groundY(wx);for(let y=gy+14+(Math.round(wx/16)%2)*8;y<H;y+=16)ctx.fillRect(x,y,2,2);}}
+  ctx.beginPath();for(let x=0;x<=W;x+=8){const y=groundY(wrap(cam+x));x?ctx.lineTo(x,y):ctx.moveTo(x,y);}ctx.strokeStyle=C.rim;ctx.lineWidth=3;ctx.stroke();
+
+  if(G){const vis=x=>{const s=sx(x);return s>-40&&s<W+40;};
+    const FL=new Set();if(G.state==='play'&&Math.random()<FXS.flicker/100*.08){const pool=[...G.enemies,...G.humans];for(let k=0;k<1+(Math.random()<.4);k++)if(pool.length)FL.add(pool[Math.floor(Math.random()*pool.length)]);}
+    for(const e of G.enemies)if(e.kind==='lander'&&e.target&&(e.state==='down'||e.state==='up')&&vis(e.x)){const x=sx(e.x);
+      ctx.fillStyle=C.beam;ctx.beginPath();ctx.moveTo(x-6,e.y+6);ctx.lineTo(x+6,e.y+6);ctx.lineTo(x+12,e.target.y+6);ctx.lineTo(x-12,e.target.y+6);ctx.fill();}
+    for(const q of G.splats)if(vis(q.x))drawSplat(sx(q.x),groundY(q.x)-2,q);
+    for(const h of G.humans)if(vis(h.x)){ctx.globalAlpha=FL.has(h)?.35:1;drawHuman(sx(h.x),h.y,h.state!=='walk');if(h.state==='fall'&&G.pw&&G.pw.k==='feather'){const x=sx(h.x);ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,h.y-26,10,Math.PI,0);ctx.moveTo(x-10,h.y-26);ctx.lineTo(x-3,h.y-14);ctx.moveTo(x+10,h.y-26);ctx.lineTo(x+3,h.y-14);ctx.stroke();}}ctx.globalAlpha=1;
+    for(const e of G.enemies)if(vis(e.x)){ctx.globalAlpha=FL.has(e)?.35:1;(e.kind==='lander'?drawLander:drawMutant)(sx(e.x),e.y);}ctx.globalAlpha=1;
+    if(G.bird&&vis(G.bird.x))drawBird(G.bird,sx(G.bird.x));
+    for(const l of G.lasers){const x=sx(l.x);if(l.up){const gu=ctx.createLinearGradient(0,l.y,0,l.y+l.trail);gu.addColorStop(0,A(1));gu.addColorStop(1,A(0));ctx.strokeStyle=gu;ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(x,l.y);ctx.lineTo(x,l.y+l.trail);ctx.stroke();continue;}const gr=ctx.createLinearGradient(x,0,x-l.dir*l.trail,0);gr.addColorStop(0,A(1));gr.addColorStop(1,A(0));
+      ctx.strokeStyle=gr;ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(x,l.y);ctx.lineTo(x-l.dir*l.trail,l.y);ctx.stroke();}
+    ctx.fillStyle=C.ink;for(const b of G.bullets)if(vis(b.x)){const x=sx(b.x);ctx.globalAlpha=.35;ctx.fillRect(x-3,b.y-3,6,6);ctx.globalAlpha=1;ctx.fillRect(x-1.5,b.y-1.5,3,3);}
+    for(const q of G.trail)if(vis(q.x)){ctx.globalAlpha=Math.max(0,q.life/q.max);ctx.fillStyle=C.ink;ctx.fillRect(sx(q.x)-1,q.y-1,2,2);}
+    for(const q of G.dust)if(vis(q.x)){ctx.globalAlpha=Math.max(0,q.life/q.max)*.8;ctx.fillStyle=C.dim;ctx.fillRect(sx(q.x)-1.5,q.y-1.5,3,3);}ctx.globalAlpha=1;
+    {const pl=G.player,c=G.humans.find(h=>h.state==='carried');if(c&&pl.alive){ctx.strokeStyle=C.dim;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(sx(pl.x),pl.y+13);ctx.lineTo(sx(c.x),c.y-15);ctx.stroke();}}
+    const p=G.player;if(p.alive&&!(p.inv>0&&Math.floor(T*12)%2)){ctx.save();ctx.translate(sx(p.x),p.y);ctx.rotate(p.drive?(p.tilt||0):p.dir*(p.vy||0)/320*.12);drawShip(0,0,p.dir,p.thrust&&!p.drive,1,p.lift);if(p.drive)drawWheels(p);ctx.restore();
+      if(G.pw&&G.pw.k==='shield'){const r=26+Math.sin(T*9)*2;ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.globalAlpha=.5+.3*Math.sin(T*9);ctx.beginPath();ctx.arc(sx(p.x),p.y,r,0,TAU);ctx.stroke();ctx.globalAlpha=1;}}
+    if(p.alive)drawWheel(sx(p.x),p.y,p);
+    for(const q of G.parts)if(vis(q.x)){ctx.globalAlpha=Math.max(0,q.life);ctx.fillStyle=q.col;ctx.fillRect(sx(q.x),q.y,2.5,2.5);}ctx.globalAlpha=1;
+    ctx.strokeStyle=C.ink;for(const r of G.rings)if(vis(r.x)){ctx.globalAlpha=1-r.t/.35;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(sx(r.x),r.y,8+r.t*260,0,TAU);ctx.stroke();}ctx.globalAlpha=1;
+    ctx.lineWidth=2;ctx.lineCap='round';for(const q of G.debris)if(vis(q.x)){ctx.globalAlpha=Math.min(1,q.life);const c=Math.cos(q.a)*q.len/2,s2=Math.sin(q.a)*q.len/2,x=sx(q.x);ctx.beginPath();ctx.moveTo(x-c,q.y-s2);ctx.lineTo(x+c,q.y+s2);ctx.stroke();}ctx.globalAlpha=1;
+    for(const q of G.wreck)if(vis(q.x)){ctx.globalAlpha=Math.min(1,q.life);drawWreck(q,sx(q.x));}ctx.globalAlpha=1;
+    if(G.pw){const P=POWERS[G.pw.k],f=G.pw.t/G.pw.dur,blink=G.pw.t<1.5&&Math.floor(T*8)%2;if(!blink){ctx.font='16px '+FB;ctx.textAlign='right';ctx.fillStyle=C.ink;txt(P.name,W-20,TOP+28);ctx.fillRect(W-20-160*f,TOP+36,160*f,4);}}
+    if(G.combo>1&&G.comboT>0){ctx.font='16px '+FB;ctx.textAlign='left';ctx.fillStyle=C.ink;ctx.globalAlpha=Math.min(1,G.comboT*2);txt('CHAIN X'+Math.min(G.combo,8),20,TOP+28);ctx.globalAlpha=1;}
+    ctx.font='16px '+FB;ctx.textAlign='center';for(const q of G.pops){ctx.globalAlpha=q.t;ctx.fillStyle=C.ink;txt(q.txt,sx(q.x),q.y);}ctx.globalAlpha=1;
+    drawHud();
+    if(G.msgT>0){ctx.globalAlpha=Math.min(1,G.msgT*2);ctx.fillStyle=C.ink;ctx.font='24px '+FT;ctx.textAlign='center';txt(G.msg,W/2,190);ctx.globalAlpha=1;}
+    if(G.flash>0){ctx.fillStyle=A(G.flash*.45);ctx.fillRect(0,0,W,H);}
+    if(G.state==='paused')drawMenu();
+    if(G.state==='over')overlay('Game over',['Score '+G.score+'   Wave '+G.wave,G.score>=HIGH&&G.score>0?'A new best':'','',G.overT>1?'Press Enter or Start to play again':'']);
+  }else titleScreen();
+}
+function drawHud(){const p=G.player;ctx.clearRect(0,0,W,TOP);ctx.fillStyle=C.rim;ctx.fillRect(0,TOP-2,W,2);
+  ctx.textAlign='left';ctx.fillStyle=C.ink;ctx.font='24px '+FT;txt(G.score,20,34);
+  ctx.font='16px '+FB;ctx.fillStyle=C.dim;txt('HI '+Math.max(HIGH,G.score)+' W'+G.wave,20,54);
+  const X0=270,SW=430,Y0=8,SH=TOP-18;ctx.strokeStyle=C.dim;ctx.lineWidth=2;ctx.strokeRect(X0+.5,Y0+.5,SW,SH);
+  const mx=x=>X0+((wd(x,p.x)+WW/2)/WW)*SW,my=y=>Y0+(y-TOP)/(H-TOP)*SH;
+  ctx.beginPath();for(let i=0;i<=SW;i+=4){const wx=wrap(p.x-WW/2+i/SW*WW);const y=my(groundY(wx));i?ctx.lineTo(X0+i,y):ctx.moveTo(X0,y);}ctx.strokeStyle=C.ground;ctx.lineWidth=2;ctx.stroke();
+  const bw=W/WW*SW,bx=mx(G.camX);ctx.strokeStyle=C.dim;ctx.lineWidth=2;ctx.strokeRect(bx,Y0+2,bw,SH-4);
+  for(const h of G.humans){ctx.fillStyle=C.ink;ctx.fillRect(mx(h.x)-2,my(h.y)-2,4,4);}
+  if(G.bird){ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.strokeRect(mx(G.bird.x)-4,my(G.bird.y)-4,8,8);}
+  for(const e of G.enemies){ctx.fillStyle=e.kind==='lander'?C.lander:C.mutant;ctx.fillRect(mx(e.x)-3,my(e.y)-3,6,6);}
+  if(p.alive&&Math.floor(T*6)%2){ctx.fillStyle=C.ship;ctx.fillRect(mx(p.x)-5,my(p.y)-2,10,4);}
+  for(let i=0;i<Math.min(G.lives,6);i++)drawShip(W-34-i*36,26,1,false,.55);
+  for(let i=0;i<Math.min(G.bombs,6);i++){ctx.fillStyle=C.mutant;ctx.fillRect(W-32-i*18,42,10,10);}}
+const MENU=['Friction','Thrust','Laser','Color','Volume','Music','Manual','Resume','Exit game'];
+function menuInput(inp){if(inp.bombP){G.state='play';return;}/* B goes back; A or X picks */const n=MENU.length;const ok=inp.fireP||inp.boostP;if(inp.upP)G.menu=(G.menu+n-1)%n;if(inp.downP)G.menu=(G.menu+1)%n;
+  const d=(inp.rightP?1:0)-(inp.leftP?1:0),m=MENU[G.menu];
+  if(d){if(m==='Friction'){SET.fric=Math.max(0,Math.min(10,SET.fric+d));saveSet();}
+    else if(m==='Thrust'){SET.thrust=Math.max(1,Math.min(10,SET.thrust+d));saveSet();}
+    else if(m==='Laser'){SET.laser=(SET.laser+LASERS.length+d)%LASERS.length;saveSet();zap(G.player.y);}
+    else if(m==='Color')setPhos(phos+(d>0?1:-1));else if(m==='Volume')B9VOL.set(B9VOL.level+d);else if(m==='Music')B9MUS.setLevel(B9MUS.level+d);tone(700,700,.05,'square',.03);}
+  if(ok&&m==='Resume')G.state='play';
+  if(ok&&m==='Music')B9MUS.toggle();
+  if(ok&&m==='Manual')manOpen();
+  if(ok&&m==='Exit game')exitGame();}
+function drawMenu(){ctx.clearRect(0,TOP,W,H-TOP);ctx.textAlign='center';ctx.fillStyle=C.ink;ctx.font='40px '+FT;txt('Paused',W/2,150);
+  const bar=v=>'#'.repeat(v)+'-'.repeat(10-v),names=HUE_NAMES.map(n=>n[0].toUpperCase()+n.slice(1));
+  const vals=[bar(SET.fric)+' '+String(SET.fric).padStart(2),bar(SET.thrust)+' '+String(SET.thrust).padStart(2),LASERS[SET.laser%LASERS.length][0],names[phos],B9VOL.level?String(B9VOL.level):'Off',B9MUS.on?String(B9MUS.level):'Off','','',''];
+  ctx.font='16px '+FB;MENU.forEach((m,i)=>{const y=210+i*25,on=i===G.menu;ctx.fillStyle=on?C.ink:C.dim;
+    ctx.textAlign='left';txt((on?'> ':'  ')+m,250,y);ctx.textAlign='right';txt(vals[i],720,y);});
+  ctx.textAlign='center';ctx.fillStyle=C.dim;
+  ['Up and down to choose, left and right to change','Friction 0 is pure space. 10 stops on a dime.','Now playing: '+G.scaleName,'Start to resume'].forEach((l,i)=>txt(l,W/2,440+i*27));}
+function overlay(title,lines){ctx.clearRect(0,TOP,W,H-TOP);ctx.textAlign='center';ctx.fillStyle=C.ink;ctx.font='48px '+FT;txt(title,W/2,250);
+  ctx.font='16px '+FB;lines.forEach((l,i)=>txt(l,W/2,300+i*32));}
+const TITLE_PICKS=['Start','Manual','Exit game'];let TSEL=0;
+
+/* THE MANUAL (see gameplay.py): what is on the screen and what the buttons do */
+const MAN={open:false,page:0};
+function manOpen(){MAN.open=true;MAN.page=0;if(AC)tone(660,880,.06,'square',.03);}
+function manClose(){MAN.open=false;if(AC)tone(880,660,.06,'square',.03);}
+function manInput(next,back,close){if(close){manClose();return;}
+  if(next){if(MAN.page<MAN_PAGES.length-1){MAN.page++;if(AC)tone(700,700,.04,'square',.03);}else manClose();}
+  else if(back&&MAN.page>0){MAN.page--;if(AC)tone(700,700,.04,'square',.03);}}
+function manWrap(s,max){const out=[];let line='';for(const w of s.split(' ')){if(line&&(line+' '+w).length>max){out.push(line);line=w;}else line=line?line+' '+w:w;}if(line)out.push(line);return out;}
+function manDraw(){const P=MAN_PAGES[MAN.page];ctx.save();ctx.globalAlpha=1;ctx.fillStyle='rgba(0,0,0,.96)';ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center';ctx.fillStyle=C.dim;ctx.font='13px x';txt('MANUAL   '+(MAN.page+1)+' / '+MAN_PAGES.length,W/2,40);
+  ctx.fillStyle=C.ink;ctx.font='28px x';txt(P.t,W/2,82);ctx.font='16px x';let y=126;
+  for(const row of P.r){if(typeof row==='string'){ctx.textAlign='center';ctx.fillStyle=C.ink;for(const l of manWrap(row,56)){txt(l,W/2,y);y+=24;}y+=8;continue;}
+    ctx.textAlign='right';ctx.fillStyle=C.ink;txt(row[0],296,y);ctx.textAlign='left';ctx.fillStyle=C.dim;for(const l of manWrap(row[1],40)){txt(l,318,y);y+=24;}y+=8;}
+  ctx.textAlign='center';ctx.fillStyle=C.dim;ctx.font='13px x';txt(MAN.page<MAN_PAGES.length-1?'LEFT RIGHT TURN THE PAGE     A NEXT     B CLOSE':'LEFT GOES BACK     A OR B CLOSE',W/2,H-20);ctx.restore();}
+const MAN_PAGES=[
+ {t:'NAN II SAVES THE HUMANS',r:['Landers come down to kidnap the humans on the ground.','Shoot a lander that is carrying one away, and the human falls. Catch them in the air and fly them down to the ground: 500 points.','If a lander gets a human to the top of the sky, the human is lost and the lander turns into a mutant that hunts NAN II.','Clear every alien to finish the wave. Every human still safe is a bonus.']},
+ {t:'WHAT YOU SEE',r:[['TOP LEFT','your score, the high score and the wave'],['TOP MIDDLE','the scanner: the whole world shrunk. Dots are humans and aliens, the box is what you can see, NAN II blinks.'],['TOP RIGHT','the B9s you have left, and your smart bombs under them'],['BEHIND NAN II','the boost wheel: it empties as you boost and fills when you rest'],['THE BIRD','ram it for a power: slow time, rapid fire, shield or feather fall. The screen takes its colour while it lasts.']]},
+ {t:'THE NAN II CONTROLLER',r:[['STICK','fly. Touch the ground to land and drive'],['X OR RB','fire. Higher on the screen plays a higher note'],['A','boost. On the ground, A launches NAN II'],['B OR LB','smart bomb: every alien on the screen'],['START','pause: volume, music and this manual'],['DRIVING','the gun points up. Go gently past humans'],['KEYBOARD','arrows, space fires, shift boosts, K bombs, enter pauses']]}];
+function titleScreen(){ctx.clearRect(0,0,W,440);ctx.textAlign='center';
+  ctx.fillStyle=C.ship;ctx.font='56px '+FT;txt('NAN II Saves',W/2,100);txt('The Humans',W/2,160);
+  drawShip(W/2-150,206,1,true,1.4);drawLander(W/2+40,196);drawHuman(W/2+40,230,true);drawMutant(W/2+150,206);
+  ctx.fillStyle=C.ink;ctx.font='16px '+FB;
+  ['Landers are kidnapping the humans.','Shoot one and catch who falls.','Fly them home to the ground.'].forEach((l,i)=>txt(l,W/2,276+i*26));
+  ctx.fillStyle=C.dim;
+  ['Move    arrows  WASD  stick','Fire  space  J  X    Boost  shift  A','Bomb  K  B            Pause  enter  start','Laser  L    Color  C    Music  M'].forEach((l,i)=>txt(l,W/2,350+i*22));
+  txt(padSeen?'Gamepad connected':'Press a pad button to wake it',W/2,446);
+  if(HIGH)txt('HI '+HIGH,W/2,536);
+  ctx.font='22px '+FT;TITLE_PICKS.forEach((n,i)=>{const on=i===TSEL;ctx.fillStyle=on?C.ink:C.dim;txt((on?'> ':'  ')+n+(on?' <':'  '),W/2,468+i*23);});}
+
+let last=performance.now();
+function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;T+=dt;const inp=readInput();
+  if(MAN.open)manInput(inp.rightP||inp.boostP||inp.fireP,inp.leftP,inp.bombP||inp.startP);else if(!G){titleCam=wrap(titleCam+40*dt);if(inp.upP||inp.downP){TSEL=(TSEL+(inp.downP?1:TITLE_PICKS.length-1))%TITLE_PICKS.length;tone(700,700,.05,'square',.03);}if(inp.startP||inp.fireP||inp.boostP){const m=TITLE_PICKS[TSEL];if(m==='Exit game')exitGame();else if(m==='Manual')manOpen();else newGame();}}else update(dt,inp);
+  if(inp.colorP)setPhos(phos+1);
+  /* L key or Select: switch laser voice instantly, show its name, and fire a sample */
+  if(inp.lzrP){audio();SET.laser=(SET.laser+1)%LASERS.length;saveSet();if(G){say('Laser: '+LASERS[SET.laser][0],1.4);}zap(G?G.player.y:260,0);}
+  {const pl=G&&G.state==='play'&&G.player.alive;engine(pl,pl&&G.player.thrust?1:0,pl&&G.player.lift?1:0,pl?Math.abs(G.player.vx):0);}
+  draw();if(MAN.open)manDraw();blit();requestAnimationFrame(frame);}
+const pers=document.createElement('canvas');pers.width=480;pers.height=270;const pctx=pers.getContext('2d');
+const tint=[0,1].map(()=>{const c=document.createElement('canvas');c.width=480;c.height=270;return c;});
+function blit(){
+  /* 4. afterglow: old light fades over a few frames; new light is instant */
+  const keep=FXS.afterglow/100*.85;pctx.globalCompositeOperation='destination-out';pctx.fillStyle=`rgba(0,0,0,${1-keep})`;pctx.fillRect(0,0,480,270);
+  pctx.globalCompositeOperation='source-over';pctx.drawImage(buf,0,0);
+  /* 6. breathing: none in a game -- the boss wants the screen steady while he plays (2026-09-23) */
+  const br=1,gb=1;
+  gctx.clearRect(0,0,160,90);gctx.imageSmoothingEnabled=true;gctx.drawImage(pers,0,0,160,90);
+  out.globalCompositeOperation='source-over';out.globalAlpha=1;out.fillStyle='#000';out.fillRect(0,0,W,H);
+  const sk=G&&G.shake>0?G.shake:0,ox=rnd(-sk,sk),oy=rnd(-sk,sk);
+  out.imageSmoothingEnabled=false;out.globalAlpha=br;out.drawImage(pers,ox,oy,W,H);
+  /* 1. bloom: blurred copy at 35-90% opacity */
+  if(FXS.bloom>0){out.imageSmoothingEnabled=true;out.globalCompositeOperation='lighter';out.globalAlpha=(.35+.55*FXS.bloom/100)*gb;out.drawImage(glow,ox,oy,W,H);}
+  /* 8. alarm bleed: red copy 4 px left, cyan copy 4 px right, additive at 32% */
+  if(FXS.alarmBleed&&G&&G.alarmT>0){[ALARM.red,ALARM.cyan].forEach((col,i)=>{const t=tint[i].getContext('2d');t.globalCompositeOperation='source-over';t.clearRect(0,0,480,270);
+      t.drawImage(pers,0,0);t.globalCompositeOperation='source-in';t.fillStyle=col;t.fillRect(0,0,480,270);
+      out.imageSmoothingEnabled=false;out.globalCompositeOperation='lighter';out.globalAlpha=.32*Math.min(1,G.alarmT*2);out.drawImage(tint[i],i?8:-8,0,W,H);});}
+  out.globalCompositeOperation='source-over';out.globalAlpha=1;
+  /* 2. scanlines: 1 px black every 3 px at 28% */
+  if(FXS.scanlines){out.fillStyle='rgba(0,0,0,.28)';for(let y=2;y<H;y+=3)out.fillRect(0,y,W,1);}
+  /* 3. vignette: clear centre to 62% black corners */
+  if(FXS.vignette){const v=out.createRadialGradient(W/2,H/2,H*.35,W/2,H/2,Math.hypot(W,H)/2);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.62)');out.fillStyle=v;out.fillRect(0,0,W,H);}}
+/* THE NAN II THEME on the title screen: start the sound as the page opens. NAN II's screen
+   lets a page play without a tap; an ordinary browser waits for the first key. */
+audio();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,1811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script>window.DAOMOTAN_ARCADE = true;</script>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Fossegrim</title>
+<!--
+  Fossegrim: the WarForBardwynn instrument (Content/MusicSystem) ported to one offline web page,
+  played on the NAN II controller. The boss wrote it; this copy wears NAN II (2026-09-24).
+
+  ON NAN II'S SHELF it lives at ~/b9/media/games/Fossegrim/index.html, edited on the Mac in
+  ~/b9-games/Fossegrim/. The boss's original, before NAN II's makeover, is kept at
+  ~/b9-games-originals/Fossegrim - original.html. The synth, the voices, the settings and the
+  controls are his, unchanged. What NAN II changed:
+    - the look: NAN II's black housing, amber screens with CRT glass, black keys with LEDs, B9 Sans;
+    - the synthwave sunset is now an oscilloscope drawing the sound itself, notes rising off it;
+    - the controller map is amber line-work on a screen, lit where a thumb is;
+    - EXIT (a key top right, and the last row in Menu) goes back to the Games shelf,
+      the way the games' EXIT GAME does. It shows only when served from NAN II's shelf;
+    - nothing pulses (the boss's rule for NAN II's screens).
+  THE MIXER (2026-09-24, the boss: "fossegrim needs eq bar and volume on top"; then "bass mids
+  treb like 80s boombox"): where the top bar's vents were, Bass, Mid and Treble faders and a
+  Volume fader. Each column's LEDs are the sound
+  in that band right now (Volume's: the whole mix), and its cap is the setting: drag it, or tap
+  a column twice to put it back. The EQ covers the instrument and the drums, before the limiter;
+  Menu has the same (EQ rows under Output, and EQ flat), for the controller.
+  MANUAL (the boss, 2026-09-25): a key by EXIT, and a Menu row, start a tour of the screen, one
+  part at a time (tour_kit.py in ~/b9-music/B9 Theme/source; sync_tour.py keeps the kit here in step).
+  Asked for next (2026-09-24, the NAN II copy is kept before it at
+  ~/b9-games-originals/Fossegrim - before drums.html):
+    - 16 scales, where there were 6;
+    - it starts in the NAN II Theme's key: G minor pentatonic, base octave 3, so the theme's six
+      notes sit on ← ↓ ↑ → X A (once, over settings saved before this);
+    - THE DRUMS: a 16-step matrix programmed by touch on NAN II's screen, five rows (kick, snare,
+      hat, open hat, clank), eight beats preloaded from NAN II's own games, their kits borrowed
+      from the NAN II Theme's engine (~/b9-music/B9 Theme/source/engine.js). View starts and
+      stops them; the map's on/off moved into Menu to make room.
+
+  Controls (the NAN II controller)
+    D-pad ← ↓ ↑ →, X A Y B   the 8 notes of the scale, climbing left to right across the pad
+                             (G B♭ C D F G B♭ C in the NAN II Theme's key)
+    LB / RB (hold)           octave down / up
+    Left stick ← / → (hold)  flat / sharp (the triggers aren't used: NAN II's pad sends none,
+                             so the boss dropped them, 2026-09-25)
+    Left stick ↕             pitch bend
+    Right stick              vibrato
+    L3 / R3                  previous / next voice (or tap the Voice module's ◀ ▶ keys)
+    View                     drums start / stop
+    Menu                     settings (D-pad to move and change, A to select, B to close;
+                             up from the top row jumps to Exit)
+
+  Like the Unreal version, it's one voice at a time: a note-on sets the pitch and fires the envelope
+  attack, a note-off fires the release (GA_Instrument → MetaSound "Note In" / "Trigger Attack" / "Trigger Release").
+-->
+<style>
+@font-face{font-family:'B9 Sans';src:url('../fonts/B9Sans.ttf') format('truetype');font-display:swap}
+:root{
+  --amber:#ffb24a; --orange:#ff7a1f; --rust:#b8471f; --hot:#ffd9a0;
+  --ink:#e8c07a; --muted:#7a6540; --legend:rgba(228,221,204,.66);
+  --screen:#0b0906; --glass:#050506;
+  --glow:rgba(255,178,74,.55); --halo:rgba(255,178,74,.22);
+  --b9:'B9 Sans', ui-monospace, "SF Mono", Menlo, monospace;
+  --narrow:"Nimbus Sans Narrow","Liberation Sans Narrow","Arial Narrow","Helvetica Neue",Helvetica,sans-serif;
+  --stripe:linear-gradient(#ffb24a 0 2px, #ff7a1f 2px 4px, #b8471f 4px 6px);
+}
+*{box-sizing:border-box}
+html,body{margin:0; height:100%; overflow:hidden; color:var(--ink); font-family:var(--narrow)}
+body{background:radial-gradient(900px 420px at 18% -8%, rgba(255,255,255,.05), transparent 60%),
+                linear-gradient(#121214, #0b0b0c 45%, #0d0d0e);}
+[hidden]{display:none!important}
+
+.housing{position:fixed; inset:0; display:grid; grid-template-rows:auto minmax(0,1fr); padding:0 16px 14px}
+
+/* THE TOP BAR: the name, the vents, the lamps, EXIT -- and the 70s stripe under it */
+.topbar{position:relative; display:flex; align-items:center; gap:18px; margin:0 -16px 14px; padding:10px 16px 16px;
+  background:linear-gradient(#1a1a1c, #0e0e0f); box-shadow:inset 0 1px 0 rgba(255,255,255,.09), 0 12px 24px rgba(0,0,0,.7)}
+.topbar::after{content:''; position:absolute; left:0; right:0; bottom:0; height:6px; background:var(--stripe); opacity:.85}
+.brand{flex:none}
+.brand h1{margin:0 0 6px; font:400 40px/1 var(--b9); letter-spacing:.14em; color:var(--amber); text-shadow:0 0 14px rgba(255,178,74,.45)}
+.brand p{margin:0; font-size:12px; font-weight:700; font-stretch:condensed; letter-spacing:.24em; text-transform:uppercase; color:var(--legend)}
+.vents{flex:1; align-self:stretch; min-width:40px; margin:14px 0; border-radius:4px;
+  background:repeating-linear-gradient(90deg, #050506 0 4px, transparent 4px 11px); box-shadow:inset 0 1px 2px rgba(0,0,0,.8); opacity:.9}
+.well{background:var(--glass); border-radius:6px; box-shadow:inset 0 3px 6px rgba(0,0,0,.95), inset 0 -1px 0 rgba(255,255,255,.05),
+  0 1px 0 rgba(255,255,255,.07), 0 -1px 0 rgba(0,0,0,.85)}
+.lamps{flex:none; display:flex; gap:6px; padding:6px}
+/* a tell-tale, the face's own: dark until it has something to say */
+.tell{display:flex; align-items:center; justify-content:center; height:34px; padding:0 9px 0 calc(9px + .16em); border-radius:3px;
+  font-family:var(--narrow); font-stretch:condensed; font-weight:700; font-size:12px; letter-spacing:.16em; white-space:nowrap;
+  color:rgba(255,255,255,.1); background:linear-gradient(rgba(255,255,255,.06), rgba(255,255,255,0) 45%), #0a0a0b;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.9), inset 0 1px 3px rgba(0,0,0,.9), 0 1px 0 rgba(255,255,255,.05)}
+.tell.on{--c:var(--amber); --cg:rgba(255,178,74,.35)}
+.tell.red{--c:#ff4a3d; --cg:rgba(255,74,61,.35)}
+.tell.on, .tell.red{color:var(--c); text-shadow:0 0 5px var(--c), 0 0 12px var(--c);
+  background:linear-gradient(rgba(255,255,255,.08), rgba(255,255,255,0) 45%), radial-gradient(ellipse at 50% 55%, var(--cg), transparent 75%), #0a0a0b}
+
+/* THE KEYS: NAN II's, glossy black and not new (b9_face.html, KEYS). Down = sunk in the slot;
+   lit = pushed in with the legend backlit and the LED on. */
+.key{position:relative; margin:0; padding:0; border:0; border-radius:4px 4px 5px 5px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  font-family:var(--narrow); font-stretch:condensed; font-weight:700; font-size:15px; letter-spacing:.16em; text-transform:uppercase;
+  color:rgba(228,221,204,.7); text-shadow:0 0 1px rgba(0,0,0,.9), 0 -1px 0 rgba(0,0,0,.7);
+  background-color:#141416;
+  background-image:
+    linear-gradient(rgba(255,255,255,.13), rgba(255,255,255,.04) 36%, rgba(255,255,255,0) 38%),
+    radial-gradient(ellipse 34% 22% at var(--wx,50%) var(--wy,60%), rgba(220,220,220,.04), transparent 70%),
+    linear-gradient(var(--sa,30deg), transparent 49.5%, rgba(255,255,255,.04) 50%, transparent 50.5%),
+    linear-gradient(#2b2b2e, #161618 55%, #0c0c0d);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.17), inset 0 -2px 0 rgba(0,0,0,.55), inset 1px 0 0 rgba(255,255,255,.04),
+             0 5px 0 #1a1a1c, 0 6px 0 #000, 0 8px 8px rgba(0,0,0,.85);
+  transform:translateY(-3px); transition:transform .06s, box-shadow .06s;
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent; outline:none; user-select:none}
+.key .lbl{padding-left:.16em}
+.key .sub{font-size:11px; letter-spacing:.14em; opacity:.8; padding-left:.14em}
+.key.down, .key.on, button.key:active{transform:translateY(1px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.1), inset 0 4px 6px rgba(0,0,0,.6), 0 1px 0 #1a1a1c, 0 2px 0 #000, 0 2px 3px rgba(0,0,0,.8)}
+.key.on{color:var(--amber); text-shadow:0 0 6px var(--glow), 0 0 1px rgba(0,0,0,.6);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.1), inset 0 4px 6px rgba(0,0,0,.6), 0 1px 0 #1a1a1c, 0 2px 0 #000, 0 0 14px var(--halo)}
+.key .pilot{position:absolute; top:7px; left:50%; width:9px; height:9px; margin-left:-4.5px; border-radius:50%;
+  background:radial-gradient(circle at 35% 35%, #3a2c22, #120d0a 72%); box-shadow:inset 0 1px 1px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.1)}
+.key.on .pilot{background:radial-gradient(circle at 38% 35%, #fff 0 12%, var(--amber) 46%); box-shadow:0 0 9px 1px var(--amber), 0 1px 0 rgba(255,255,255,.1)}
+.exit{flex:none; width:88px; height:54px; cursor:pointer}
+#manualKey{padding-top:10px}
+/* THE MIXER, where the vents were: the EQ's faders and Volume on a screen, a readout beside */
+.mixer{flex:1; min-width:0; display:flex; align-items:stretch; gap:8px; padding:4px}
+.mixscreen{flex:none; padding:3px 6px 2px; line-height:0; background:#050505; touch-action:none; cursor:ns-resize}
+#mix{display:block}
+.mixer .mixdisp{flex:1; min-width:0; font-size:12px; letter-spacing:.04em; white-space:normal; line-height:1.35; text-align:center; padding:0 8px}
+
+/* THE DECK: the note, the scope and the controller map on top; the drums and the side
+   column of modules under them */
+.deck{position:relative; min-height:0; display:grid; gap:14px; grid-template-rows:minmax(0,1fr) auto}
+.rowA{position:relative; min-height:0; display:grid; gap:14px; grid-template-columns:240px minmax(0,1fr) auto}
+.rowB{display:grid; gap:14px; grid-template-columns:minmax(0,1fr) 352px}
+.side{min-height:0; display:flex; flex-direction:column; gap:14px}
+
+/* A MODULE: a raised panel screwed to the housing, its name printed on it beside the stripe */
+.module{position:relative; min-height:0; margin:0; padding:28px 10px 10px; border-radius:10px;
+  background:
+    radial-gradient(circle at 10px 10px, #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at calc(100% - 10px) 10px, #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at 10px calc(100% - 10px), #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at calc(100% - 10px) calc(100% - 10px), #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    linear-gradient(#1b1b1d, #111112);
+  box-shadow:inset 1px 1px 0 rgba(255,255,255,.1), inset -1px -2px 0 rgba(0,0,0,.85), 0 0 0 1px #050506, 0 7px 18px rgba(0,0,0,.65)}
+.module > .label{position:absolute; top:8px; left:24px; right:24px; display:flex; align-items:center; gap:12px;
+  font-stretch:condensed; font-weight:700; font-size:12px; letter-spacing:.26em; text-transform:uppercase;
+  color:var(--legend); text-shadow:0 -1px 0 rgba(0,0,0,.8); white-space:nowrap}
+.module > .label::after{content:''; flex:1; height:6px; opacity:.7; background:var(--stripe)}
+.screen{position:relative; overflow:hidden; border-radius:6px; background:var(--screen);
+  box-shadow:inset 0 3px 9px rgba(0,0,0,.95), inset 0 0 0 1px rgba(0,0,0,.9), 0 1px 0 rgba(255,255,255,.06)}
+/* THE GLASS: still scanlines and darker corners over every screen. Nothing here pulses. */
+.screen::after, .disp::after{content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; z-index:3;
+  background:repeating-linear-gradient(rgba(0,0,0,0) 0 2px, rgba(0,0,0,.17) 2px 3px),
+             radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 60%, rgba(0,0,0,.3) 100%)}
+.stagemod{display:flex; flex-direction:column}
+.stagemod > .screen{flex:1; min-height:0}
+
+/* THE NOTE: what's sounding, in NAN II's hand, lit while the note is held */
+.notescreen{display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 8px}
+.glow{position:absolute; left:50%; top:46%; width:260px; height:260px; transform:translate(-50%,-50%); border-radius:50%;
+  pointer-events:none; opacity:0; background:radial-gradient(circle, rgba(255,178,74,.34), rgba(255,122,31,.1) 42%, rgba(255,122,31,0) 68%)}
+.note{position:relative; font:400 clamp(56px,11vh,92px)/1 var(--b9); letter-spacing:.02em; color:var(--hot);
+  text-shadow:0 0 18px rgba(255,178,74,.75), 0 0 2px rgba(255,178,74,.9); transition:opacity .25s}
+.note.off{opacity:.38}
+.keyinfo{position:relative; margin-top:16px; font:400 13px/1.5 var(--b9); letter-spacing:.08em; text-transform:uppercase;
+  color:var(--amber); text-shadow:0 0 8px rgba(255,178,74,.45)}
+.keyinfo span{display:block}
+
+/* THE SCOPE: the sound itself, on a graticule, with the notes rising off the trace */
+.scopescreen{background:
+  linear-gradient(rgba(255,178,74,.2), rgba(255,178,74,.2)) 0 50% / 100% 1px no-repeat,
+  linear-gradient(90deg, rgba(255,178,74,.2), rgba(255,178,74,.2)) 50% 0 / 1px 100% no-repeat,
+  repeating-linear-gradient(90deg, rgba(255,178,74,.07) 0 1px, transparent 1px 10%),
+  repeating-linear-gradient(rgba(255,178,74,.07) 0 1px, transparent 1px 12.5%),
+  var(--screen)}
+#fx{position:absolute; inset:0; width:100%; height:100%; display:block; z-index:1}
+
+/* THE MAP: the NAN II controller in amber line-work, each note button labelled with the note it plays now */
+.mapmod{display:flex; flex-direction:column}
+.mapscreen{flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:6px 10px 4px}
+.mapscreen svg{display:block; width:auto; height:min(236px, 29.5vh); max-width:100%}
+#pad .body{fill:rgba(255,178,74,.035); stroke:rgba(255,178,74,.6); stroke-width:2}
+#pad .shape{fill:var(--screen); stroke:rgba(255,178,74,.5); stroke-width:1.5}
+#pad .btn.on .shape{fill:var(--amber); stroke:var(--hot)}
+#pad .btn.on text{fill:var(--screen)}
+#pad .face .shape{stroke:rgba(255,178,74,.8); stroke-width:2}
+#pad .guide{fill:var(--screen); stroke:var(--orange); stroke-width:2}
+#pad text{font-family:var(--b9); fill:rgba(255,178,74,.85); text-anchor:middle; dominant-baseline:central; font-size:12px; letter-spacing:.06em}
+#pad .face text{font-size:16px; fill:var(--amber)}
+#pad text.small{font-family:var(--narrow); font-weight:700; font-size:11px; letter-spacing:.14em; fill:rgba(255,178,74,.5)}
+#pad text.b9{font-size:11px; fill:var(--orange)}
+#pad text.nl{font-size:19px; fill:var(--hot); paint-order:stroke; stroke:var(--screen); stroke-width:6px; stroke-linejoin:round}
+#pad text.nl.on{fill:#fff4dc; stroke:rgba(255,178,74,.45)}
+#pad text.acc{font-family:var(--narrow); font-size:22px; fill:rgba(255,178,74,.45)}
+#pad text.acc.on{fill:var(--hot)}
+#pad text.end{text-anchor:end}
+#pad text.start{text-anchor:start}
+
+/* the side column */
+.voicebar{display:flex; gap:10px; align-items:stretch; height:52px}
+.voicebar .key{flex:none; width:58px; font-size:14px}
+.disp{position:relative; flex:1; min-width:0; display:flex; align-items:center; justify-content:center; padding:0 12px;
+  background:var(--glass); border-radius:5px; font:400 15px var(--b9); letter-spacing:.1em; text-transform:uppercase;
+  color:var(--amber); text-shadow:0 0 8px rgba(255,178,74,.45); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  box-shadow:inset 0 3px 6px rgba(0,0,0,.95), inset 0 -1px 0 rgba(255,255,255,.05)}
+.holds{display:grid; grid-template-columns:1fr 1fr; gap:12px 10px; padding:6px 2px 4px}
+.holds .key{height:46px; padding-top:10px; gap:1px}
+.holds .key .lbl{font-size:15px}
+.holds .key .pilot{top:5px; width:8px; height:8px; margin-left:-4px}
+.meters{display:grid; grid-template-columns:auto minmax(0,1fr); gap:12px 12px; align-items:center; padding:11px 14px}
+.meters span{font-stretch:condensed; font-weight:700; font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:rgba(255,178,74,.6)}
+/* an LED bar: amber light behind a mask of segments */
+.track{position:relative; height:14px; border-radius:2px; background:rgba(255,178,74,.08); overflow:hidden}
+.track i{position:absolute; top:0; bottom:0; left:0; width:100%; background:var(--amber); box-shadow:0 0 8px var(--glow);
+  transform-origin:left center; transform:scaleX(0)}
+.track.bi i{left:50%; width:50%}
+.track::after{content:''; position:absolute; inset:0; background:repeating-linear-gradient(90deg, transparent 0 6px, var(--screen) 6px 9px)}
+.track.bi::before{content:''; position:absolute; left:50%; top:-2px; bottom:-2px; width:2px; margin-left:-1px; background:var(--orange); z-index:1}
+/* THE DRUMS: the transport's keys on the panel, the beat's matrix on the glass under them.
+   A step is off, soft (dim amber) or loud (full amber); the lamps and a lit column follow
+   the beat as it's heard. Programmed by touch on NAN II's screen. */
+.drummod{display:flex; flex-direction:column; gap:10px}
+.transport{display:flex; gap:8px; height:46px; padding:0 2px}
+.transport .key{flex:none; width:46px; font-size:18px; letter-spacing:0}
+.transport .key .lbl{padding-left:0}
+.transport .disp{flex:1; min-width:0}
+.transport .wide{width:108px; font-size:14px; letter-spacing:.16em; padding-top:9px}
+.transport .wide .lbl{padding-left:.16em}
+.transport .wide .pilot{top:5px; width:8px; height:8px; margin-left:-4px}
+.transport .kit{width:104px; font-size:14px; letter-spacing:.16em}
+.transport .kit .sub{color:var(--amber); opacity:.85; font-size:11px}
+.transport .key[data-armed]{color:var(--amber); text-shadow:0 0 6px var(--glow), 0 0 1px rgba(0,0,0,.6)}
+.transport .gap{flex:none; width:6px}
+.drumscreen{flex:1; display:flex; flex-direction:column; justify-content:center; padding:8px 10px 10px}
+.drumgrid{position:relative; display:grid; grid-template-columns:62px repeat(4, minmax(0,1fr)); gap:5px 10px; align-items:center}
+.drumgrid .four{display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:4px}
+.drumgrid .dl{font-stretch:condensed; font-weight:700; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:rgba(255,178,74,.6)}
+.lamp{height:6px; border-radius:1px; background:rgba(255,178,74,.1)}
+.lamp.now{background:var(--amber); box-shadow:0 0 8px var(--glow)}
+.cell{display:block; width:100%; height:40px; margin:0; padding:0; border:0; border-radius:3px; cursor:pointer;
+  background:#050506; box-shadow:inset 0 2px 5px rgba(0,0,0,.95), inset 0 0 0 1px rgba(255,178,74,.08);
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent; outline:none}
+.cell.one{box-shadow:inset 0 2px 5px rgba(0,0,0,.95), inset 0 0 0 1px rgba(255,178,74,.2)}
+.cell.o{background:rgba(255,178,74,.34); box-shadow:inset 0 0 0 1px rgba(255,178,74,.5)}
+.cell.x{background:var(--amber); box-shadow:0 0 9px var(--glow), inset 0 1px 0 rgba(255,241,208,.6)}
+.cell.now{outline:1px solid rgba(255,217,160,.75); outline-offset:1px}
+.cell.x.now{background:var(--hot)}
+
+/* NO CONTROLLER YET: a word on the top row's glass, steady. The drums below stay free to touch. */
+.splash{position:absolute; inset:-6px; z-index:5; display:grid; place-items:center; padding:12px; text-align:center;
+  background:rgba(6,5,4,.86); border-radius:12px}
+.splash svg{width:110px; height:auto}
+.splash h2{margin:14px 0 8px; font:400 clamp(20px,3.4vh,28px)/1.3 var(--b9); letter-spacing:.12em; color:var(--amber); text-shadow:0 0 12px rgba(255,178,74,.5)}
+.splash p{margin:0; font-weight:700; font-stretch:condensed; font-size:15px; letter-spacing:.2em; text-transform:uppercase; color:var(--legend)}
+
+/* SETTINGS (Menu): a module slid in over the side, its rows on an amber screen */
+.settings{position:fixed; z-index:6; top:0; right:0; bottom:0; width:min(470px,100vw); display:flex; flex-direction:column;
+  padding:34px 14px 14px; border-radius:12px 0 0 12px; box-shadow:-24px 0 60px rgba(0,0,0,.75), inset 1px 1px 0 rgba(255,255,255,.1), 0 0 0 1px #050506}
+.settings > .label{top:12px; font-size:14px}
+.rows{flex:1; min-height:0; overflow:auto; padding:6px 8px 10px; scrollbar-width:none}
+.rows::-webkit-scrollbar{display:none}
+.rh{display:flex; align-items:center; gap:10px; padding:14px 8px 6px; font-weight:700; font-stretch:condensed; font-size:11px;
+  letter-spacing:.24em; text-transform:uppercase; color:rgba(255,178,74,.5)}
+.rh::after{content:''; flex:1; height:1px; background:rgba(255,178,74,.18)}
+.row{display:flex; justify-content:space-between; align-items:center; gap:14px; padding:7px 10px; border-radius:4px;
+  font-weight:700; font-stretch:condensed; font-size:16px; letter-spacing:.12em; text-transform:uppercase; color:rgba(255,178,74,.62)}
+.row.sel{color:var(--amber); background:rgba(255,178,74,.1); box-shadow:inset 0 0 0 1.5px var(--amber); text-shadow:0 0 6px rgba(255,178,74,.4)}
+.row .val{display:inline-flex; align-items:center; gap:8px; font:400 15px var(--b9); letter-spacing:.06em; color:var(--hot); white-space:nowrap}
+.row .arr{font-family:var(--narrow); font-size:12px; color:var(--orange); visibility:hidden}
+.row.sel .arr{visibility:visible}
+.settings .foot{margin:12px 6px 0; font-weight:700; font-stretch:condensed; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--legend)}
+.settings .foot b{color:var(--amber); font-weight:700}
+
+.banners{position:fixed; z-index:7; top:104px; left:50%; transform:translateX(-50%); width:min(720px,calc(100vw - 32px));
+  display:flex; flex-direction:column; gap:8px; pointer-events:none}
+.banner{margin:0; padding:12px 16px; border-radius:6px; background:var(--glass); border:1px solid var(--rust);
+  box-shadow:inset 0 3px 6px rgba(0,0,0,.95), 0 8px 24px rgba(0,0,0,.8);
+  font:400 14px/1.5 var(--b9); letter-spacing:.06em; color:var(--amber); text-shadow:0 0 8px rgba(255,178,74,.4)}
+
+/* a narrow window (a browser on the Mac, say): one column, and the page scrolls */
+@media (max-width:1000px){
+  html,body{overflow:auto}
+  .housing{position:static; min-height:100%}
+  .deck{grid-template-rows:none}
+  .rowA, .rowB{grid-template-columns:minmax(0,1fr)}
+  .notemod, .scopemod{height:300px}
+  .transport .kit, .transport .wide{width:84px}
+  .vents{display:none}
+  .topbar{flex-wrap:wrap} .mixer{order:5; flex-basis:100%}
+  .brand h1{font-size:30px}
+}
+@media (prefers-reduced-motion: reduce){ .note{transition:none} .key{transition:none} }
+/* TOUR:BEGIN (css) -- the manual's tour, from ~/b9-music/B9 Theme/source/tour_kit.py */
+.tour{position:fixed; inset:0; z-index:2147483000; font-family:"Nimbus Sans Narrow","Liberation Sans Narrow","Arial Narrow",Helvetica,sans-serif}
+.tour[hidden]{display:none!important}
+.tour .shade{position:fixed; inset:0; background:rgba(4,3,2,.74)}
+.tour:not(.nospot) .shade{background:transparent}
+.tour .spot{position:fixed; border-radius:10px; pointer-events:none;
+  box-shadow:0 0 0 2px #ffb24a, 0 0 22px 3px rgba(255,178,74,.4), 0 0 0 200vmax rgba(4,3,2,.74)}
+.tour.nospot .spot{display:none}
+.tour .card{position:fixed; width:min(460px, calc(100vw - 32px)); padding:32px 18px 16px; border-radius:10px; color:#e8c07a;
+  background:
+    radial-gradient(circle at 10px 10px, #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at calc(100% - 10px) 10px, #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at 10px calc(100% - 10px), #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at calc(100% - 10px) calc(100% - 10px), #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    linear-gradient(#1b1b1d, #111112);
+  box-shadow:inset 1px 1px 0 rgba(255,255,255,.1), inset -1px -2px 0 rgba(0,0,0,.85), 0 0 0 1px #050506, 0 12px 30px rgba(0,0,0,.8)}
+.tour .lab{position:absolute; top:10px; left:22px; right:22px; display:flex; align-items:center; gap:10px; white-space:nowrap;
+  font-weight:700; font-stretch:condensed; font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:rgba(228,221,204,.66)}
+.tour .lab::after{content:''; flex:1; height:6px; opacity:.7; background:linear-gradient(#ffb24a 0 2px, #ff7a1f 2px 4px, #b8471f 4px 6px)}
+.tour h3{margin:2px 0 8px; font:400 22px/1.2 'B9 Sans', ui-monospace, monospace; letter-spacing:.08em; color:#ffb24a;
+  text-shadow:0 0 10px rgba(255,178,74,.4); text-transform:uppercase}
+.tour p{margin:0 0 14px; font-size:15px; line-height:1.5; letter-spacing:.02em; font-weight:400; font-stretch:normal; color:#e8c07a}
+.tour p b{color:#ffb24a; font-weight:700}
+.tour .row{display:flex; gap:8px; align-items:center}
+.tour .count{flex:1; font:400 12px 'B9 Sans', ui-monospace, monospace; letter-spacing:.1em; color:#a88d5c}
+.tour button{margin:0; padding:0 16px; height:42px; border:0; border-radius:4px 4px 5px 5px; cursor:pointer;
+  font:700 13px/1 "Nimbus Sans Narrow","Liberation Sans Narrow","Arial Narrow",Helvetica,sans-serif; font-stretch:condensed;
+  letter-spacing:.16em; text-transform:uppercase; color:rgba(228,221,204,.72); text-shadow:0 0 1px rgba(0,0,0,.9);
+  background:linear-gradient(rgba(255,255,255,.13), rgba(255,255,255,.04) 36%, rgba(255,255,255,0) 38%), linear-gradient(#2b2b2e, #161618 55%, #0c0c0d);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.17), inset 0 -2px 0 rgba(0,0,0,.55), 0 3px 0 #1a1a1c, 0 4px 0 #000, 0 5px 6px rgba(0,0,0,.8);
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent; outline:none}
+.tour button:active{transform:translateY(2px); box-shadow:inset 0 1px 0 rgba(255,255,255,.1), inset 0 4px 6px rgba(0,0,0,.6), 0 1px 0 #1a1a1c, 0 2px 0 #000}
+.tour button[data-t=next]{color:#ffb24a; text-shadow:0 0 6px rgba(255,178,74,.55)}
+.tour button:disabled{opacity:.35; cursor:default}
+/* a MANUAL key not yet opened on this screen: its LED lit, steady (nothing pulses) */
+.tour-new{color:#ffb24a!important}
+.tour-new .pilot{background:radial-gradient(circle at 38% 35%, #fff 0 12%, #ffb24a 46%)!important; box-shadow:0 0 9px 1px #ffb24a!important}
+/* TOUR:END (css) */
+</style>
+</head>
+<body>
+<div class="housing">
+  <header class="topbar">
+    <div class="brand">
+      <h1>FOSSEGRIM</h1>
+      <p>The bard's instrument · played on the NAN II controller</p>
+    </div>
+    <div class="well mixer" id="mixer">
+      <div class="screen mixscreen" id="mixScreen"><canvas id="mix" aria-label="EQ and Volume: put a finger on a fader and slide it, tap one twice to reset it"></canvas></div>
+      <div class="disp mixdisp" id="mixDisp"></div>
+    </div>
+    <div class="well lamps">
+      <span class="tell" id="padLamp">NAN II CONTROLLER</span>
+      <span class="tell" id="soundLamp">SOUND</span>
+    </div>
+    <button type="button" class="key exit" id="manualKey" style="--wx:62%;--wy:40%;--sa:140deg"><i class="pilot"></i><span class="lbl">Manual</span></button>
+    <button type="button" class="key exit" id="exitKey" hidden style="--wx:36%;--wy:70%;--sa:24deg"><span class="lbl">Exit</span></button>
+  </header>
+
+  <main class="deck" id="deck">
+   <div class="rowA">
+    <section class="module stagemod notemod">
+      <div class="label">Note</div>
+      <div class="screen notescreen">
+        <div class="glow" id="glow"></div>
+        <div class="note off" id="note">—</div>
+        <div class="keyinfo" id="keyInfo"></div>
+      </div>
+    </section>
+
+    <section class="module stagemod scopemod">
+      <div class="label">Scope</div>
+      <div class="screen scopescreen"><canvas id="fx"></canvas></div>
+    </section>
+
+    <section class="module mapmod" id="map">
+      <div class="label">NAN II controller</div>
+      <div class="screen mapscreen">
+        <svg id="pad" viewBox="0 0 720 312" aria-label="Controller map: which note each button plays right now">
+          <g class="btn" data-b="4"><rect class="shape" x="132" y="52" width="128" height="24" rx="12"/><text x="196" y="64">LB OCT −</text></g>
+          <g class="btn" data-b="5"><rect class="shape" x="460" y="52" width="128" height="24" rx="12"/><text x="524" y="64">RB OCT +</text></g>
+          <path class="body" d="M190 88 C270 78 450 78 530 88 C610 98 650 170 676 290 C680 306 676 312 668 312 L52 312 C44 312 40 306 44 290 C70 170 110 98 190 88 Z"/>
+
+          <g class="btn" data-b="10"><circle class="shape" cx="200" cy="165" r="34"/><text x="200" y="158">BEND</text><text class="small" x="200" y="178">◀ L3</text></g>
+          <text class="acc" id="stickFlat" x="150" y="165">♭</text><text class="acc" id="stickSharp" x="250" y="165">♯</text>
+          <g class="btn" data-b="11"><circle class="shape" cx="442" cy="240" r="32"/><text x="442" y="233">VIB</text><text class="small" x="442" y="252">R3 ▶</text></g>
+
+          <rect class="shape" x="266" y="228" width="24" height="24"/>
+          <g class="btn" data-b="12"><rect class="shape" x="266" y="198" width="24" height="30" rx="4"/></g>
+          <g class="btn" data-b="13"><rect class="shape" x="266" y="252" width="24" height="30" rx="4"/></g>
+          <g class="btn" data-b="14"><rect class="shape" x="236" y="228" width="30" height="24" rx="4"/></g>
+          <g class="btn" data-b="15"><rect class="shape" x="290" y="228" width="30" height="24" rx="4"/></g>
+          <text class="nl end" data-deg="0" x="228" y="240"></text>
+          <text class="nl" data-deg="2" x="278" y="185"></text>
+          <text class="nl start" data-deg="3" x="328" y="240"></text>
+          <text class="nl" data-deg="1" x="278" y="296"></text>
+
+          <g class="btn face" data-b="3"><circle class="shape" cx="520" cy="125" r="19"/><text x="520" y="125">Y</text></g>
+          <g class="btn face" data-b="2"><circle class="shape" cx="480" cy="165" r="19"/><text x="480" y="165">X</text></g>
+          <g class="btn face" data-b="1"><circle class="shape" cx="560" cy="165" r="19"/><text x="560" y="165">B</text></g>
+          <g class="btn face" data-b="0"><circle class="shape" cx="520" cy="205" r="19"/><text x="520" y="205">A</text></g>
+          <text class="nl end" data-deg="4" x="455" y="165"></text>
+          <text class="nl" data-deg="6" x="520" y="93"></text>
+          <text class="nl start" data-deg="7" x="586" y="165"></text>
+          <text class="nl" data-deg="5" x="520" y="240"></text>
+
+          <circle class="guide" cx="360" cy="124" r="17"/><text class="b9" x="360" y="124">NAN II</text>
+          <g class="btn" data-b="8"><circle class="shape" cx="318" cy="165" r="11"/><text class="small" x="318" y="190">DRUMS</text></g>
+          <g class="btn" data-b="9"><circle class="shape" cx="402" cy="165" r="11"/><text class="small" x="402" y="190">MENU</text></g>
+        </svg>
+      </div>
+    </section>
+
+    <div class="splash" id="splash">
+      <div>
+        <svg viewBox="0 0 120 80" aria-hidden="true">
+          <path d="M30 10 C45 6 75 6 90 10 C106 14 114 34 117 58 C119 74 106 80 97 74 C90 69 85 60 78 56 L42 56 C35 60 30 69 23 74 C14 80 1 74 3 58 C6 34 14 14 30 10 Z" fill="none" stroke="#ffb24a" stroke-width="2.5"/>
+          <circle cx="34" cy="30" r="7" fill="none" stroke="#ffb24a" stroke-width="2"/>
+          <circle cx="86" cy="24" r="4" fill="#ffb24a"/><circle cx="78" cy="32" r="4" fill="#ffb24a"/>
+          <circle cx="94" cy="32" r="4" fill="#ffb24a"/><circle cx="86" cy="40" r="4" fill="#ffb24a"/>
+          <path d="M44 42h12M50 36v12" stroke="#ffb24a" stroke-width="2.5"/>
+          <circle cx="60" cy="22" r="5" fill="none" stroke="#ff7a1f" stroke-width="2"/>
+        </svg>
+        <h2>PRESS ANY BUTTON ON THE NAN II CONTROLLER</h2>
+        <p>Asleep? Press its centre button to wake it.</p>
+      </div>
+    </div>
+   </div>
+
+   <div class="rowB">
+    <section class="module drummod">
+      <div class="label">Drums</div>
+      <div class="transport">
+        <button type="button" class="key wide" id="drumPlay" style="--wx:40%;--wy:64%;--sa:28deg"><i class="pilot"></i><span class="lbl">Play</span><span class="sub">View</span></button>
+        <span class="gap"></span>
+        <button type="button" class="key" id="beatPrev" style="--wx:60%;--wy:40%;--sa:-40deg" aria-label="Previous beat"><span class="lbl">◀</span></button>
+        <div class="disp" id="beatName"></div>
+        <button type="button" class="key" id="beatNext" style="--wx:34%;--wy:70%;--sa:16deg" aria-label="Next beat"><span class="lbl">▶</span></button>
+        <span class="gap"></span>
+        <button type="button" class="key" id="bpmDown" style="--wx:66%;--wy:52%;--sa:58deg" aria-label="Slower"><span class="lbl">−</span></button>
+        <div class="disp" id="bpmShow"></div>
+        <button type="button" class="key" id="bpmUp" style="--wx:30%;--wy:44%;--sa:-12deg" aria-label="Faster"><span class="lbl">+</span></button>
+        <span class="gap"></span>
+        <button type="button" class="key kit" id="kitKey" style="--wx:52%;--wy:68%;--sa:36deg"><span class="lbl">Kit</span><span class="sub" id="kitName"></span></button>
+        <button type="button" class="key kit" id="clearKey" style="--wx:46%;--wy:38%;--sa:-26deg"><span class="lbl">Clear</span></button>
+      </div>
+      <div class="screen drumscreen"><div class="drumgrid" id="drumGrid"></div></div>
+    </section>
+
+    <aside class="side">
+      <section class="module">
+        <div class="label">Voice</div>
+        <div class="voicebar">
+          <button type="button" class="key" id="voicePrev" data-b="10" aria-label="Previous voice" style="--wx:62%;--wy:40%;--sa:-18deg"><span class="lbl">◀</span><span class="sub">L3</span></button>
+          <div class="disp" id="voiceName"></div>
+          <button type="button" class="key" id="voiceNext" data-b="11" aria-label="Next voice" style="--wx:30%;--wy:66%;--sa:52deg"><span class="lbl">▶</span><span class="sub">R3</span></button>
+        </div>
+      </section>
+
+      <section class="module">
+        <div class="label">Hold</div>
+        <div class="holds">
+          <span class="key" id="modLB" style="--wx:28%;--wy:58%;--sa:40deg"><i class="pilot"></i><span class="lbl">LB</span><span class="sub">Octave −</span></span>
+          <span class="key" id="modRB" style="--wx:70%;--wy:44%;--sa:-30deg"><i class="pilot"></i><span class="lbl">RB</span><span class="sub">Octave +</span></span>
+          <span class="key" id="modLT" style="--wx:44%;--wy:72%;--sa:12deg"><i class="pilot"></i><span class="lbl">Flat</span><span class="sub">Stick ◀</span></span>
+          <span class="key" id="modRT" style="--wx:58%;--wy:36%;--sa:66deg"><i class="pilot"></i><span class="lbl">Sharp</span><span class="sub">Stick ▶</span></span>
+        </div>
+      </section>
+
+      <section class="module">
+        <div class="label">Sticks</div>
+        <div class="screen meters">
+          <span>Bend</span><div class="track bi"><i id="bendBar"></i></div>
+          <span>Vibrato</span><div class="track"><i id="vibBar"></i></div>
+        </div>
+      </section>
+    </aside>
+   </div>
+  </main>
+</div>
+
+<aside class="module settings" id="settings" hidden aria-label="Settings">
+  <div class="label">Settings</div>
+  <div class="screen rows" id="rows"></div>
+  <p class="foot"><b>D-pad</b> ↕ choose, ↔ change · <b>A</b> select · <b>B</b> or <b>Menu</b> close</p>
+</aside>
+
+<div class="banners">
+  <p class="banner" id="audioBanner" hidden>Sound hasn't started yet. Tap the screen once and it will.</p>
+  <p class="banner" id="mapBanner" hidden>This controller isn't reporting the standard button layout, so its buttons may not match the map.</p>
+</div>
+
+<script>
+'use strict';
+/* TOUR:BEGIN (js) -- the manual's tour, from ~/b9-music/B9 Theme/source/tour_kit.py */
+const Tour = {
+  open: false, i: 0, list: [], steps: [], el: null, name: '', key: null, held: {}, primed: false,
+  init(name, steps, key) {
+    this.name = name; this.steps = steps; this.key = key || null;
+    const el = this.el = document.createElement('div');
+    el.className = 'tour nospot'; el.hidden = true;
+    el.innerHTML = '<div class="shade"></div><div class="spot"></div><div class="card" role="dialog" aria-live="polite">'
+      + '<div class="lab"></div><h3></h3><p></p><div class="row"><span class="count"></span>'
+      + '<button type="button" data-t="back">Back</button><button type="button" data-t="next">Next</button>'
+      + '<button type="button" data-t="close">Close</button></div></div>';
+    document.body.append(el);
+    el.querySelector('[data-t=back]').onclick = () => this.go(-1);
+    el.querySelector('[data-t=next]').onclick = () => this.go(1);
+    el.querySelector('[data-t=close]').onclick = () => this.close();
+    el.querySelector('.shade').onclick = () => this.go(1);          // a tap on the dimmed screen goes on
+    if (this.key) {
+      this.key.addEventListener('click', () => this.start());
+      try { if (!localStorage.getItem('b9-manual-seen:' + name)) this.key.classList.add('tour-new'); } catch (e) { /* no storage: no hint */ }
+    }
+    addEventListener('keydown', e => {
+      if (!this.open) return;
+      e.stopImmediatePropagation(); e.preventDefault();
+      if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') this.go(1);
+      else if (e.key === 'ArrowLeft') this.go(-1);
+      else if (e.key === 'Escape') this.close();
+    }, true);
+    addEventListener('resize', () => { if (this.open) this.show(); });
+  },
+  vis(e) { if (!e || e.closest('[hidden]')) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; },
+  start() {
+    this.list = this.steps.filter(s => !s.sel || [...document.querySelectorAll(s.sel)].some(e => this.vis(e)));
+    if (!this.list.length) return;
+    this.open = true; this.i = 0; this.primed = false; this.el.hidden = false;
+    this.show();
+    try { localStorage.setItem('b9-manual-seen:' + this.name, '1'); } catch (e) { /* not kept */ }
+    if (this.key) this.key.classList.remove('tour-new');
+  },
+  close() { this.open = false; this.el.hidden = true; },
+  go(d) {
+    const n = this.i + d;
+    if (n < 0) return;
+    if (n >= this.list.length) { this.close(); return; }
+    this.i = n; this.show();
+  },
+  show() {
+    const s = this.list[this.i], el = this.el, card = el.querySelector('.card');
+    el.querySelector('.lab').textContent = 'Manual · ' + this.name;
+    el.querySelector('h3').textContent = s.title;
+    el.querySelector('p').innerHTML = s.text;
+    el.querySelector('.count').textContent = (this.i + 1) + ' / ' + this.list.length;
+    el.querySelector('[data-t=back]').disabled = this.i === 0;
+    el.querySelector('[data-t=next]').textContent = this.i === this.list.length - 1 ? 'Done' : 'Next';
+    // the part being explained: every element the step names, as one lit box
+    let r = null;
+    if (s.sel) for (const e of document.querySelectorAll(s.sel)) {
+      if (!this.vis(e)) continue;
+      const q = e.getBoundingClientRect();
+      r = r ? { left: Math.min(r.left, q.left), top: Math.min(r.top, q.top), right: Math.max(r.right, q.right), bottom: Math.max(r.bottom, q.bottom) }
+            : { left: q.left, top: q.top, right: q.right, bottom: q.bottom };
+    }
+    el.classList.toggle('nospot', !r);
+    const W = innerWidth, H = innerHeight, pad = 6, gap = 16;
+    if (r) Object.assign(el.querySelector('.spot').style, { left: (r.left - pad) + 'px', top: (r.top - pad) + 'px',
+      width: (r.right - r.left + pad * 2) + 'px', height: (r.bottom - r.top + pad * 2) + 'px' });
+    // the card: under the part if it fits, else over it, else beside it (narrower, if that is
+    // what fits there -- a big part like a drawing board leaves only a strip), else in the middle
+    card.style.width = '';
+    let cw = card.offsetWidth, ch = card.offsetHeight;
+    let x = (W - cw) / 2, y = (H - ch) / 2;
+    if (r) {
+      const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+      const right = W - 8 - (r.right + pad + gap), left = r.left - pad - gap - 8;
+      if (r.bottom + pad + gap + ch <= H - 8) { y = r.bottom + pad + gap; x = cx - cw / 2; }
+      else if (r.top - pad - gap - ch >= 8) { y = r.top - pad - gap - ch; x = cx - cw / 2; }
+      else if (Math.max(right, left) >= 260) {
+        const room = Math.max(right, left);
+        if (room < cw) { card.style.width = room + 'px'; cw = card.offsetWidth; ch = card.offsetHeight; }
+        x = right >= left ? r.right + pad + gap : r.left - pad - gap - cw; y = cy - ch / 2;
+      }
+    }
+    card.style.left = Math.round(Math.max(8, Math.min(W - cw - 8, x))) + 'px';
+    card.style.top = Math.round(Math.max(8, Math.min(H - ch - 8, y))) + 'px';
+  },
+  // the NAN II controller while the tour is up: A or right goes on, left goes back, B or Start closes.
+  // Whatever is held when it opens (the A that opened it) waits to be let go.
+  pad(p) {
+    const btn = i => !!(p.buttons[i] && p.buttons[i].pressed), x = p.axes[0] || 0;
+    const now = { a: btn(0), b: btn(1), s: btn(9), l: btn(14) || x < -.5, r: btn(15) || x > .5 };
+    if (!this.primed) { this.held = now; this.primed = true; return; }
+    const edge = k => now[k] && !this.held[k];
+    if (edge('a') || edge('r')) this.go(1);
+    else if (edge('l')) this.go(-1);
+    else if (edge('b') || edge('s')) this.close();
+    this.held = now;
+  },
+};
+/* TOUR:END (js) */
+
+// ---- music helpers (same as melody-cartridge.html) ------------------------
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const pcOf = p => ((p % 12) + 12) % 12;
+const noteName = p => NOTE_NAMES[pcOf(p)] + (Math.floor(p / 12) - 1);
+// B9 Sans has no ♯, so NAN II's screens write a sharp the way its keyboard does: #
+const prettyNote = p => noteName(p);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const B9FONT = '"B9 Sans", ui-monospace, Menlo, monospace';
+
+// ON NAN II: served from NAN II's games shelf. Only there does EXIT have somewhere to go.
+const ON_B9 = location.pathname.startsWith('/media/games/');
+
+// Pulse waves with a given duty cycle: 12.5% and 25% are the classic NES leads.
+const waveCache = new Map();
+function pulseWave(ctx, duty) {
+  if (waveCache.has(duty)) return waveCache.get(duty);
+  const N = 64;
+  const real = new Float32Array(N), imag = new Float32Array(N);
+  for (let n = 1; n < N; n++) real[n] = (2 / (n * Math.PI)) * Math.sin(n * Math.PI * duty);
+  const w = ctx.createPeriodicWave(real, imag);
+  waveCache.set(duty, w);
+  return w;
+}
+
+// All seven modes, the other minors, and a few with a flavour of their own. With five or six
+// notes the top buttons run on into the next octave; the map always shows the real note.
+const SCALES = [
+  { id: 'major', name: 'Major', steps: [0, 2, 4, 5, 7, 9, 11] },
+  { id: 'minor', name: 'Minor', steps: [0, 2, 3, 5, 7, 8, 10] },
+  { id: 'dorian', name: 'Dorian', steps: [0, 2, 3, 5, 7, 9, 10] },
+  { id: 'phrygian', name: 'Phrygian', steps: [0, 1, 3, 5, 7, 8, 10] },
+  { id: 'lydian', name: 'Lydian', steps: [0, 2, 4, 6, 7, 9, 11] },
+  { id: 'mixolydian', name: 'Mixolydian', steps: [0, 2, 4, 5, 7, 9, 10] },
+  { id: 'locrian', name: 'Locrian', steps: [0, 1, 3, 5, 6, 8, 10] },
+  { id: 'harmonic', name: 'Harmonic minor', steps: [0, 2, 3, 5, 7, 8, 11] },
+  { id: 'melodic', name: 'Melodic minor', steps: [0, 2, 3, 5, 7, 9, 11] },
+  { id: 'phrygdom', name: 'Phrygian dominant', steps: [0, 1, 4, 5, 7, 8, 10] },
+  { id: 'hungarian', name: 'Hungarian minor', steps: [0, 2, 3, 6, 7, 8, 11] },
+  { id: 'majpent', name: 'Major pentatonic', steps: [0, 2, 4, 7, 9] },
+  { id: 'minpent', name: 'Minor pentatonic', steps: [0, 3, 5, 7, 10] },
+  { id: 'blues', name: 'Blues', steps: [0, 3, 5, 6, 7, 10] },
+  { id: 'hirajoshi', name: 'Hirajoshi', steps: [0, 2, 3, 7, 8] },
+  { id: 'wholetone', name: 'Whole tone', steps: [0, 2, 4, 6, 8, 10] },
+];
+const scaleById = id => SCALES.find(s => s.id === id) || SCALES[0];
+
+// Each voice is a fixed timbre plus a patch of defaults the settings panel can tweak.
+// SNAPPY (the boss, 2026-09-24): every voice starts with the shortest attack and the chip
+// scoop off -- a fade-in and a swoop up into pitch both read as lag on NAN II. Menu brings them back.
+// Except the Chip Lead: its 200-cent swoop is its character, so it keeps it (the boss, same day).
+// cutoff is a multiple of the note's frequency (the filter follows the pitch); filterEnv is in cents.
+// THE SOUND PHILOSOPHY (the boss, 2026-09-25: "apply the philosophy to fossegrim too"; the rules are
+// in ~/b9-music/B9 Sound Philosophy.md): every voice also passes a fixed CEILING (ceil, Hz) so no
+// note -- an octave up on RB included -- pushes energy into 2.5-5.5 kHz, where the ear hears
+// harshness; the Chip Lead's filter follows at 10x the note, not 20x; the Synthwave's saws sit 10
+// cents apart (slow beating, not roughness) with a milder resonance; the Chip's vibrato is the C64's
+// 6.25 Hz. Each voice's level is matched by loudness (BS.1770) so changing voice changes the colour,
+// not the volume, and no voice peaks above where the old loudest did (NAN II's amp). The snappy attacks
+// and the Chip scoop are the boss's and stay.
+const VOICES = [
+  { id: 'neon', name: 'Neon Ocarina',
+    a: { wave: 'triangle', level: .359 }, b: { wave: 'pulse12', level: .0648, detune: 1200 },
+    noise: .101, cutoff: 8, q: .9, ceil: 3800, filterEnv: 900, vibRate: 5.6, vibBase: 22, vibDelay: .3, feedback: .4,
+    patch: { glide: .05, attack: .002, decay: .25, sustain: .8, release: .35, scoop: 0, vibrato: 1, delayMix: .25, delayTime: .33, reverbMix: .3 } },
+  { id: 'ocarina', name: 'Ocarina',
+    a: { wave: 'sine', level: .259 }, b: { wave: 'triangle', level: .025, detune: 1200 },
+    noise: .0833, cutoff: 5, q: .7, ceil: 4200, filterEnv: 300, vibRate: 5.2, vibBase: 16, vibDelay: .4, feedback: .3,
+    patch: { glide: .03, attack: .002, decay: .35, sustain: .9, release: .2, scoop: 0, vibrato: 1, delayMix: .1, delayTime: .25, reverbMix: .4 } },
+  { id: 'chip', name: 'Chip Lead',
+    a: { wave: 'pulse25', level: .391 }, b: { wave: 'triangle', level: .251, detune: -1200 },
+    noise: 0, cutoff: 10, q: .5, ceil: 4500, filterEnv: 0, vibRate: 6.25, vibBase: 12, vibDelay: .22, feedback: .25,
+    patch: { glide: 0, attack: .002, decay: .15, sustain: .7, release: .05, scoop: 200, vibrato: 1, delayMix: .2, delayTime: .15, reverbMix: .1 } },
+  { id: 'synthwave', name: 'Synthwave',
+    a: { wave: 'sawtooth', level: .296, detune: -5 }, b: { wave: 'sawtooth', level: .296, detune: 5 },
+    noise: .0296, cutoff: 3, q: 2, ceil: 3400, filterEnv: 1800, vibRate: 5, vibBase: 8, vibDelay: .5, feedback: .45,
+    patch: { glide: .09, attack: .002, decay: .5, sustain: .6, release: .5, scoop: 0, vibrato: 1, delayMix: .35, delayTime: .375, reverbMix: .45 } },
+];
+const voiceById = id => VOICES.find(v => v.id === id) || VOICES[0];
+
+// THE DRUMS' KITS AND BEATS. The kits are the NAN II Theme engine's own (engine.js, below);
+// the eight beats come out of NAN II's games, each with the kit it plays there. A row is 16
+// steps: '.' off, 'o' soft, 'x' loud -- the engine's notation. Every beat can be rewritten
+// on the matrix; the names stay.
+const KITS = [['chip', 'Chip'], ['club', 'Club'], ['soft', 'Soft'], ['junk', 'Junk']];
+const DRUM_ROWS = [['k', 'Kick'], ['s', 'Snare'], ['h', 'Hat'], ['o', 'Open'], ['m', 'Clank']];
+const EMPTY = '................';
+const BEATS = [
+  { name: 'NAN II Theme', kit: 'soft', k: 'x.......x.......', s: '....x.......x...', h: '..x...x...x...x.' },               // Saves, the title
+  { name: 'Arcade', kit: 'chip', k: 'x.....x...x.....', s: '....x.......x...', h: 'x.x.x.x.x.x.x.x.' },                 // Saves, in play
+  { name: 'Tunnel', kit: 'club', k: 'x...x...x...x...', s: '....x.......x...', h: '.o.o.o.o.o.o.o.o', o: '..x...x...x...x.' }, // Wormhole, the run
+  { name: 'Rim', kit: 'club', k: 'x...x...x...x...', s: '....x.......x..o', h: 'xoxoxoxoxoxoxoxo', o: '..x...x...x...x.' },   // Wormhole, the rim
+  { name: 'Junkyard', kit: 'junk', k: 'x.....x...x.....', s: '....x.......x...', h: '.x.x.x.x.x.x.x.x', m: '..o..x...o..x.o.' }, // Black Hole
+  { name: 'Drift', kit: 'soft', k: 'x...............', h: '........o.......' },                                            // Black Hole
+  { name: 'Gauntlet', kit: 'club', k: 'x.x...x.x.x.....', s: '....x.......x...', h: 'x.x.x.x.x.x.x.x.', o: '..............x.' }, // Black Hole
+  { name: 'Beat 8', kit: 'club' },
+];
+
+// ---- settings (remembered in this browser; the page works without it) -----
+const STORE_KEY = 'fossegrim.v1';
+// THE EQ, the 80s boombox way (the boss): a bass shelf, a broad mid bell, a treble shelf.
+// tag is the fader's label on the top bar; name is the Menu's.
+const EQ_BANDS = [
+  { f: 100, type: 'lowshelf', tag: 'BASS', name: 'Bass' },
+  { f: 1000, type: 'peaking', q: .7, tag: 'MID', name: 'Mid' },
+  { f: 6000, type: 'highshelf', tag: 'TREB', name: 'Treble' },
+];
+const EQ_SPAN = [[20, 250], [250, 4000], [4000, 16000]];   // what each fader's LEDs listen to
+function makeSettings(saved) {
+  saved = saved && typeof saved === 'object' ? saved : {};
+  const num = (v, d, lo, hi) => Number.isFinite(+v) && v !== null ? clamp(+v, lo, hi) : d;
+  // THE NAN II THEME'S KEY, G minor pentatonic from G3, is where Fossegrim starts: the theme's
+  // six notes then sit on ← ↓ ↑ → X A. Settings saved before that are moved to it once.
+  const fresh = !saved.b9Theme;
+  const snap = !saved.snappy;   // saved before the snappy defaults: take them once
+  const chipBack = !saved.chipScoop;   // and the Chip Lead's scoop comes back once
+  const s = {
+    voice: voiceById(saved.voice).id,
+    scale: fresh ? 'minpent' : scaleById(saved.scale).id,
+    root: fresh ? 7 : Math.round(num(saved.root, 7, 0, 11)),
+    octave: fresh ? 3 : Math.round(num(saved.octave, 3, 2, 6)),
+    b9Theme: true,
+    snappy: true,
+    chipScoop: true,
+    bendRange: num(saved.bendRange, 2, 1, 12),
+    volume: num(saved.volume, .8, 0, 1),
+    eq: EQ_BANDS.map((b, i) => Math.round(num(Array.isArray(saved.eq) && saved.eq.length === EQ_BANDS.length ? saved.eq[i] : 0, 0, -12, 12))),
+    lite: saved.lite === true,
+    map: saved.map !== false,
+    patches: {},
+  };
+  for (const v of VOICES) {
+    const p = (saved.patches && saved.patches[v.id]) || {};
+    s.patches[v.id] = {};
+    for (const k in v.patch) s.patches[v.id][k] = (snap && (k === 'attack' || k === 'scoop')) || (chipBack && v.id === 'chip' && k === 'scoop')
+      ? v.patch[k] : num(p[k], v.patch[k], 0, k === 'scoop' ? 1200 : 5);
+  }
+  const d = saved.drums && typeof saved.drums === 'object' ? saved.drums : {};
+  s.drums = {
+    slot: Math.round(num(d.slot, 0, 0, BEATS.length - 1)),
+    bpm: Math.round(num(d.bpm, 132, 60, 200)),
+    vol: num(d.vol, .8, 0, 1),
+    beats: BEATS.map((p, n) => {
+      const b = (Array.isArray(d.beats) && d.beats[n]) || {};
+      const o = { name: p.name, kit: KITS.some(k => k[0] === b.kit) ? b.kit : p.kit };
+      for (const [r] of DRUM_ROWS) o[r] = typeof b[r] === 'string' && /^[.ox]{16}$/.test(b[r]) ? b[r] : (p[r] || EMPTY);
+      return o;
+    }),
+  };
+  return s;
+}
+let S = makeSettings((() => { try { return JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) { return null; } })());
+let saveTimer = 0;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } }, 300);
+}
+const curVoice = () => voiceById(S.voice);
+const curPatch = () => S.patches[S.voice];
+
+// Scale degree (0 = tonic, 7 = tonic an octave up) → MIDI note, with LB/RB octave and the stick's flat/sharp.
+function degreeToMidi(deg, oct, acc) {
+  const steps = scaleById(S.scale).steps, n = steps.length;
+  return 12 * (S.octave + 1) + S.root + steps[deg % n] + 12 * Math.floor(deg / n) + 12 * oct + acc;
+}
+
+// ---- audio engine ---------------------------------------------------------
+// Jump an AudioParam's automation to "whatever it is right now" so new ramps start without a click.
+function hold(param, t) {
+  if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(t);
+  else { const v = param.value; param.cancelScheduledValues(t); param.setValueAtTime(v, t); }
+}
+
+// Stereo decaying-noise impulse that darkens as it fades, standing in for the MetaSound plate reverb.
+function impulse(ctx, seconds, decay) {
+  const rate = ctx.sampleRate, len = Math.floor(rate * seconds), pre = Math.floor(rate * .012);
+  const buf = ctx.createBuffer(2, len, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = pre; i < len; i++) {
+      const k = (i - pre) / (len - pre);
+      lp += ((Math.random() * 2 - 1) - lp) * (1 - .75 * k);
+      d[i] = lp * Math.pow(1 - k, decay);
+    }
+  }
+  return buf;
+}
+
+const Engine = {
+  ctx: null, n: {}, gate: false, midi: null, noteStart: 0, envVis: 0, lastBend: 0, lastVib: 0, reverbOn: false,
+
+  init() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = this.ctx = new AC({ latencyHint: 'interactive' });
+    const n = this.n;
+    const constant = v => { const c = ctx.createConstantSource(); c.offset.value = v; c.start(); return c; };
+    const gain = v => { const g = ctx.createGain(); g.gain.value = v; return g; };
+
+    // Pitch is kept in cents from A4 (440 Hz) and summed into every pitch-following detune input,
+    // so glide, stick bend, the attack scoop and vibrato never fight over one automation timeline.
+    n.note = constant(0); n.bend = constant(0); n.scoop = constant(0);
+    n.lfo = ctx.createOscillator(); n.vib = gain(0); n.lfo.connect(n.vib);
+
+    n.oscA = ctx.createOscillator(); n.oscB = ctx.createOscillator();
+    n.oscA.frequency.value = n.oscB.frequency.value = 440;
+    n.gA = gain(0); n.gB = gain(0); n.gN = gain(0);
+    n.oscA.connect(n.gA); n.oscB.connect(n.gB);
+
+    // breath: white noise through a band-pass that follows the note an octave up
+    const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const nd = noise.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    n.noise = ctx.createBufferSource(); n.noise.buffer = noise; n.noise.loop = true;
+    n.breath = ctx.createBiquadFilter(); n.breath.type = 'bandpass'; n.breath.frequency.value = 880; n.breath.Q.value = 1.6;
+    n.noise.connect(n.breath).connect(n.gN);
+
+    n.filter = ctx.createBiquadFilter(); n.filter.type = 'lowpass';
+    // THE CEILING (the sound philosophy): a fixed low-pass after the one that follows the note,
+    // flat (Web Audio reads a low-pass Q in dB: -3 is Butterworth), at the voice's ceil
+    n.ceil = ctx.createBiquadFilter(); n.ceil.type = 'lowpass'; n.ceil.Q.value = -3; n.ceil.frequency.value = 4200;
+    n.env = gain(0);
+    for (const g of [n.gA, n.gB, n.gN]) g.connect(n.filter);
+    n.filter.connect(n.ceil).connect(n.env);
+
+    for (const p of [n.oscA.detune, n.oscB.detune, n.breath.detune, n.filter.detune]) { n.note.connect(p); n.bend.connect(p); }
+    for (const p of [n.oscA.detune, n.oscB.detune, n.breath.detune]) { n.scoop.connect(p); n.vib.connect(p); }
+
+    // dry bus + ping-pong delay + reverb → master → limiter-ish compressor
+    n.bus = gain(1);
+    n.env.connect(n.bus);
+    n.dSend = gain(0); n.dl = ctx.createDelay(2); n.dr = ctx.createDelay(2); n.fb = gain(.35);
+    n.fbTone = ctx.createBiquadFilter(); n.fbTone.type = 'lowpass'; n.fbTone.frequency.value = 2600;
+    const panL = new StereoPannerNode(ctx, { pan: -.7 }), panR = new StereoPannerNode(ctx, { pan: .7 });
+    n.env.connect(n.dSend).connect(n.dl);
+    n.dl.connect(panL).connect(n.bus);
+    n.dl.connect(n.dr);
+    n.dr.connect(panR).connect(n.bus);
+    n.dr.connect(n.fb).connect(n.fbTone).connect(n.dl);
+    n.rSend = gain(0); n.conv = ctx.createConvolver(); n.conv.buffer = impulse(ctx, 2.2, 3);
+    // the room keeps nothing under 180 Hz: the low end stays dry and centred (the sound philosophy)
+    n.revHp = ctx.createBiquadFilter(); n.revHp.type = 'highpass'; n.revHp.frequency.value = 180; n.revHp.Q.value = -3;
+    n.env.connect(n.rSend); n.conv.connect(n.revHp).connect(n.bus);
+    n.master = gain(S.volume); n.comp = ctx.createDynamicsCompressor();
+    n.comp.threshold.value = -16; n.comp.knee.value = 12; n.comp.ratio.value = 4; n.comp.attack.value = .004; n.comp.release.value = .2;
+    // NAN II's scope listens in line before the limiter (an analyser passes its sound through
+    // untouched), so it draws the instrument alone; the drums join after it, at the limiter.
+    n.scope = ctx.createAnalyser(); n.scope.fftSize = 2048;
+    // THE TRIM (2026-09-24): NAN II's speaker bar runs at 100% and its amplifier distorted on
+    // Fossegrim's long notes, which peaked at .5-.7 of full scale -- no digital clipping, just
+    // too much level for the little amp. A fixed 5 dB off, after everything; Volume still rules.
+    n.out = gain(.55);
+    // THE EQ (2026-09-24): the instrument and the drums both go through it, before the limiter,
+    // so a boost can't get past the limiter. A boost also takes half of itself off the whole
+    // mix (n.eqIn), so turning a band up never drives NAN II's little amp harder than it was tuned for.
+    // The meter after it feeds the top bar's LEDs.
+    n.eqIn = gain(1);
+    n.eq = EQ_BANDS.map(b => { const q = ctx.createBiquadFilter(); q.type = b.type; q.frequency.value = b.f; if (b.q) q.Q.value = b.q; return q; });
+    n.eq.reduce((a, q) => a.connect(q), n.eqIn).connect(n.comp);
+    n.meter = ctx.createAnalyser(); n.meter.fftSize = 1024; n.meter.smoothingTimeConstant = .5;
+    n.eq[n.eq.length - 1].connect(n.meter);
+    n.bus.connect(n.master).connect(n.scope).connect(n.eqIn);
+    n.comp.connect(n.out).connect(ctx.destination);
+    n.drums = gain(S.volume * S.drums.vol); n.drums.connect(n.eqIn);
+
+    for (const s of [n.lfo, n.oscA, n.oscB, n.noise]) s.start();
+    this.applyVoice(); this.applyPatch(); this.applyOutput(); this.applyEq();
+  },
+
+  applyEq() {
+    const n = this.n, t = this.ctx.currentTime;
+    S.eq.forEach((db, i) => n.eq[i].gain.setTargetAtTime(db, t, .03));
+    n.eqIn.gain.setTargetAtTime(Math.pow(10, -Math.max(0, ...S.eq) / 40), t, .03);   // half the biggest boost, off everything
+  },
+
+  setWave(osc, wave) {
+    if (wave === 'pulse12') osc.setPeriodicWave(pulseWave(this.ctx, .125));
+    else if (wave === 'pulse25') osc.setPeriodicWave(pulseWave(this.ctx, .25));
+    else osc.type = wave;
+  },
+
+  applyVoice() {
+    const v = curVoice(), n = this.n, t = this.ctx.currentTime;
+    this.setWave(n.oscA, v.a.wave); this.setWave(n.oscB, v.b.wave);
+    n.oscA.detune.value = v.a.detune || 0; n.oscB.detune.value = v.b.detune || 0;
+    n.gA.gain.setTargetAtTime(v.a.level, t, .02);
+    n.gB.gain.setTargetAtTime(v.b.level, t, .02);
+    n.gN.gain.setTargetAtTime(v.noise, t, .02);
+    n.filter.frequency.setTargetAtTime(440 * v.cutoff, t, .02);
+    n.filter.Q.setTargetAtTime(v.q, t, .02);
+    n.ceil.frequency.setTargetAtTime(v.ceil || 4200, t, .02);
+    n.lfo.frequency.setTargetAtTime(v.vibRate, t, .05);
+    n.fb.gain.setTargetAtTime(v.feedback, t, .05);
+  },
+
+  applyPatch() {
+    const p = curPatch(), n = this.n, t = this.ctx.currentTime;
+    n.dl.delayTime.setTargetAtTime(p.delayTime, t, .05);
+    n.dr.delayTime.setTargetAtTime(p.delayTime, t, .05);
+    n.dSend.gain.setTargetAtTime(p.delayMix, t, .03);
+    n.rSend.gain.setTargetAtTime(p.reverbMix, t, .03);
+  },
+
+  applyOutput() {
+    const n = this.n;
+    n.master.gain.setTargetAtTime(S.volume, this.ctx.currentTime, .03);
+    n.drums.gain.setTargetAtTime(S.volume * S.drums.vol, this.ctx.currentTime, .03);   // Volume turns the drums too
+    const want = !S.lite; // lite mode skips the convolver, the heaviest node on a small board
+    if (want !== this.reverbOn) {
+      if (want) n.rSend.connect(n.conv); else n.rSend.disconnect();
+      this.reverbOn = want;
+    }
+  },
+
+  resume() { if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {}); },
+
+  // Note on: set the pitch (glide if a note is already sounding) and fire the attack.
+  noteOn(midi) {
+    const n = this.n, v = curVoice(), p = curPatch(), t = this.ctx.currentTime;
+    this.pitchTo(midi, this.gate ? p.glide : 0);
+    const e = n.env.gain;
+    hold(e, t);
+    e.linearRampToValueAtTime(1, t + p.attack);
+    e.setTargetAtTime(p.sustain, t + p.attack, Math.max(.005, p.decay / 3));
+    const f = n.filter.detune;
+    hold(f, t);
+    f.linearRampToValueAtTime(v.filterEnv, t + p.attack);
+    f.setTargetAtTime(0, t + p.attack, Math.max(.01, p.decay / 2));
+    const s = n.scoop.offset; // the "chip bend": every note swoops up into pitch
+    hold(s, t);
+    s.setValueAtTime(-p.scoop, t);
+    s.setTargetAtTime(0, t, .025);
+    this.gate = true;
+    this.noteStart = t;
+  },
+
+  glideTo(midi) { this.pitchTo(midi, curPatch().glide); },
+
+  pitchTo(midi, glide) {
+    const o = this.n.note.offset, t = this.ctx.currentTime, cents = (midi - 69) * 100;
+    hold(o, t);
+    if (glide > 0) o.setTargetAtTime(cents, t, glide / 3); else o.setValueAtTime(cents, t);
+    this.midi = midi;
+  },
+
+  noteOff() {
+    if (!this.gate) return;
+    const e = this.n.env.gain, t = this.ctx.currentTime;
+    hold(e, t);
+    e.setTargetAtTime(0, t, Math.max(.005, curPatch().release / 4));
+    this.gate = false;
+  },
+
+  // Stick bend in semitones and extra vibrato (0..1). Vibrato also fades in on its own after
+  // each note starts, like a held ocarina note.
+  setExpression(bendSemis, vibAmt) {
+    const n = this.n, t = this.ctx.currentTime, v = curVoice();
+    const cents = bendSemis * 100;
+    if (Math.abs(cents - this.lastBend) > .5) { n.bend.offset.setTargetAtTime(cents, t, .012); this.lastBend = cents; }
+    const onset = this.gate ? clamp((t - this.noteStart - v.vibDelay) / .35, 0, 1) : 0;
+    const depth = (v.vibBase * onset + vibAmt * 70) * curPatch().vibrato;
+    if (Math.abs(depth - this.lastVib) > .5) { n.vib.gain.setTargetAtTime(depth, t, .05); this.lastVib = depth; }
+  },
+
+  // A rough copy of the envelope for visuals (the glow behind the note).
+  tick(dt) {
+    const p = curPatch();
+    this.envVis = this.gate
+      ? this.envVis + (1 - this.envVis) * Math.min(1, dt / Math.max(.02, p.attack))
+      : this.envVis * Math.exp(-dt / Math.max(.02, p.release / 3));
+  },
+};
+
+// ---- the scope: the sound on NAN II's glass, and the notes rising off it -------
+function drawGlyph(g, beamed) {
+  if (!beamed) {
+    g.beginPath(); g.ellipse(38, 66, 13, 9.5, -.4, 0, Math.PI * 2); g.fill();
+    g.fillRect(48, 22, 4.5, 44);
+    g.beginPath(); g.moveTo(52.5, 22); g.bezierCurveTo(60, 30, 72, 36, 66, 56); g.bezierCurveTo(68, 42, 60, 38, 52.5, 36); g.closePath(); g.fill();
+  } else {
+    g.beginPath(); g.ellipse(28, 70, 11.5, 8.5, -.4, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(66, 62, 11.5, 8.5, -.4, 0, Math.PI * 2); g.fill();
+    g.fillRect(37, 30, 4, 40); g.fillRect(75, 22, 4, 40);
+    g.beginPath(); g.moveTo(37, 30); g.lineTo(79, 22); g.lineTo(79, 31); g.lineTo(37, 39); g.closePath(); g.fill();
+  }
+}
+
+// A phosphor screen: what was drawn fades over a few frames and new light is instant (the
+// games' afterglow). The trace is held still by triggering on a rising zero crossing and
+// showing about three cycles of the note, whatever its pitch. When the sound has died
+// and the last note has floated off, the glass settles to a flat line and drawing stops.
+const Fx = {
+  c: null, g: null, w: 1, h: 1, parts: [], sprites: [], data: null, idle: 0,
+
+  init() {
+    this.c = document.getElementById('fx');
+    this.g = this.c.getContext('2d');
+    this.data = new Float32Array(Engine.n.scope.fftSize);
+    // Glow is baked into sprites once; shadowBlur every frame would be too slow.
+    for (let k = 0; k < 2; k++) {
+      const s = document.createElement('canvas');
+      s.width = s.height = 96;
+      const g = s.getContext('2d');
+      g.fillStyle = '#ffb24a'; g.shadowColor = 'rgba(255,178,74,.9)';
+      g.shadowBlur = 14;
+      drawGlyph(g, k === 1);
+      this.sprites[k] = s;
+    }
+    this.resize();
+    if (window.ResizeObserver) new ResizeObserver(() => this.resize()).observe(this.c.parentElement);
+  },
+
+  resize() {
+    const r = this.c.parentElement.getBoundingClientRect(), d = Math.min(2, window.devicePixelRatio || 1);
+    this.w = Math.max(1, r.width); this.h = Math.max(1, r.height);
+    this.c.width = Math.round(this.w * d); this.c.height = Math.round(this.h * d);
+    this.g.setTransform(d, 0, 0, d, 0, 0);
+    this.idle = 0;
+  },
+
+  spawn(midi) {
+    const w = this.w, h = this.h;
+    const span = clamp((midi - 48) / 42, 0, 1); // low notes rise on the left, high on the right
+    this.parts.push({
+      x: w * (.12 + .76 * span) + (Math.random() - .5) * 40, y: h * .5 + (Math.random() - .5) * 20,
+      vy: 60 + Math.random() * 35, sway: 8 + Math.random() * 12, ph: Math.random() * 6.28, age: 0, life: 1.8,
+      sprite: this.sprites[Math.random() < .5 ? 0 : 1], label: prettyNote(midi),
+    });
+    const cap = S.lite ? 14 : 30;
+    while (this.parts.length > cap) this.parts.shift();
+  },
+
+  draw(dt) {
+    const d = this.data;
+    Engine.n.scope.getFloatTimeDomainData(d);
+    let peak = 0;
+    for (let i = 0; i < d.length; i += 4) peak = Math.max(peak, Math.abs(d[i]));
+    const active = peak > .002 || this.parts.length > 0;
+    this.idle = active ? 0 : this.idle + dt;
+    if (this.idle > 1) return;   // settled: the flat line is on the glass already
+
+    const g = this.g, w = this.w, h = this.h, mid = h / 2;
+    g.globalCompositeOperation = 'destination-out';
+    g.fillStyle = 'rgba(0,0,0,.45)';
+    g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'source-over';
+
+    const f = 440 * Math.pow(2, ((Engine.midi == null ? 57 : Engine.midi) - 69 + Hud.bend) / 12);
+    const span = Math.round(clamp(Engine.ctx.sampleRate / f * 3, 160, d.length / 2));
+    let t0 = 0;
+    for (let i = 1; i < d.length - span; i++) if (d[i - 1] < 0 && d[i] >= 0) { t0 = i; break; }
+    const amp = h * .7, lim = h * .46;
+    g.beginPath();
+    for (let x = 0; x <= w; x += 2) {
+      const y = mid - clamp(d[t0 + Math.floor(x / w * (span - 1))] * amp, -lim, lim);
+      if (x) g.lineTo(x, y); else g.moveTo(x, y);
+    }
+    g.lineJoin = 'round';
+    g.strokeStyle = 'rgba(255,178,74,.2)'; g.lineWidth = 7; g.stroke();
+    g.strokeStyle = '#ffcd82'; g.lineWidth = 1.8; g.stroke();
+
+    g.textAlign = 'center'; g.textBaseline = 'top'; g.font = '15px ' + B9FONT; g.fillStyle = '#ffb24a';
+    for (let i = this.parts.length - 1; i >= 0; i--) {
+      const p = this.parts[i];
+      p.age += dt;
+      if (p.age >= p.life) { this.parts.splice(i, 1); continue; }
+      const k = p.age / p.life;
+      const size = 56 * (.7 + .3 * Math.min(1, k * 5));
+      const x = p.x + Math.sin(p.ph + p.age * 3) * p.sway, y = p.y - p.vy * p.age;
+      g.globalAlpha = k < .12 ? k / .12 : 1 - Math.max(0, (k - .45) / .55);
+      g.drawImage(p.sprite, x - size / 2, y - size / 2, size, size);
+      g.fillText(p.label, x, y + size * .42);
+    }
+    g.globalAlpha = 1;
+  },
+};
+
+// ---- the drum machine -----------------------------------------------------
+// THE KITS are the NAN II Theme engine's hit(), exactly as the games play it
+// (~/b9-music/B9 Theme/source/engine.js), less its side-chain pump: chip (NES-style),
+// club (drum machine), soft (brushes), junk (clanks). k kick, s snare, h hat,
+// o open hat, m clank; v is 1 for a loud step, .5 for a soft one.
+const DRUM_TRIM = 2;    // the kits were mixed to sit under a game; here they play with you
+let drumNoiseBuf = null;
+function drumNoise(c) {
+  if (!drumNoiseBuf) {
+    drumNoiseBuf = c.createBuffer(1, c.sampleRate, c.sampleRate);
+    const d = drumNoiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  return drumNoiseBuf;
+}
+function panTo(c, x, dst) { if (!x) return dst; const p = c.createStereoPanner(); p.pan.value = x; p.connect(dst); return p; }
+function hit(c, d, k, kit, t, v) {
+  if (k === 'k') {
+    const o = c.createOscillator(), g = c.createGain(), chip = kit === 'chip';
+    o.type = chip ? 'triangle' : 'sine';
+    o.frequency.setValueAtTime(chip ? 210 : 150, t); o.frequency.exponentialRampToValueAtTime(chip ? 48 : 42, t + .11);
+    const vol = v * (kit === 'soft' ? .2 : chip ? .34 : .3), len = kit === 'club' ? .34 : .22;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + len);
+    o.connect(g); g.connect(d); o.start(t); o.stop(t + len + .02);
+    return;
+  }
+  if (k === 'm') { // a clank: two squares at a clashing ratio through a band-pass
+    const g = c.createGain(), bp = c.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 2400; bp.Q.value = 1.5;
+    for (const f of [540, 540 * 1.53]) {
+      const o = c.createOscillator(); o.type = 'square'; o.frequency.value = f * (.97 + Math.random() * .06);
+      o.connect(bp); o.start(t); o.stop(t + .12);
+    }
+    g.gain.setValueAtTime(.1 * v, t); g.gain.exponentialRampToValueAtTime(.001, t + .1);
+    bp.connect(g); g.connect(panTo(c, .3, d));
+    return;
+  }
+  const s = c.createBufferSource(); s.buffer = drumNoise(c);
+  const f = c.createBiquadFilter(), g = c.createGain();
+  let len, vol, px = 0;
+  if (k === 's') {
+    f.type = 'bandpass'; f.frequency.value = kit === 'chip' ? 3200 : 1800; f.Q.value = .8;
+    len = kit === 'soft' ? .12 : .16; vol = kit === 'soft' ? .07 : .16;
+    if (kit !== 'chip' && kit !== 'soft') {
+      const o = c.createOscillator(), og = c.createGain(); o.type = 'triangle';
+      o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(150, t + .08);
+      og.gain.setValueAtTime(.12 * v, t); og.gain.exponentialRampToValueAtTime(.001, t + .09);
+      o.connect(og); og.connect(d); o.start(t); o.stop(t + .1);
+    }
+  } else if (k === 'h') { f.type = 'highpass'; f.frequency.value = 8000; len = .035; vol = kit === 'soft' ? .03 : .05; px = -.25; }
+  else { f.type = 'highpass'; f.frequency.value = 6500; len = .18; vol = .045; px = .25; }
+  g.gain.setValueAtTime(vol * v, t); g.gain.exponentialRampToValueAtTime(.001, t + len);
+  s.connect(f); f.connect(g); g.connect(panTo(c, px, d)); s.start(t, Math.random() * .5); s.stop(t + len + .02);
+}
+
+// THE SEQUENCER. Steps are booked a little ahead on the sound card's own clock (engine.js
+// tick() does the same), so a slow frame can't make the beat stumble; the lamps follow the
+// steps as they're heard, not as they're booked.
+const Drums = {
+  on: false, i: 0, next: 0, heard: [],
+
+  beat() { return S.drums.beats[S.drums.slot]; },
+
+  start() {
+    Engine.resume();
+    this.on = true; this.i = 0; this.heard = [];
+    this.next = Engine.ctx.currentTime + .06;
+    this.tick();
+    Matrix.paint();
+  },
+
+  stop() { this.on = false; this.heard = []; Matrix.show(-1); Matrix.paint(); },
+
+  toggle() { if (this.on) this.stop(); else this.start(); },
+
+  tick() {
+    if (!this.on) return;
+    const c = Engine.ctx, now = c.currentTime;
+    if (this.next < now - .2) this.next = now + .05;   // fell behind (a stall): pick up, don't rush to catch up
+    while (this.next < now + .12) {
+      const b = this.beat(), at = this.next;
+      for (const [r] of DRUM_ROWS) { const q = b[r][this.i]; if (q !== '.') hit(c, Engine.n.drums, r, b.kit, at, (q === 'x' ? 1 : .5) * DRUM_TRIM); }
+      this.heard.push([at, this.i]);
+      this.next += 60 / S.drums.bpm / 4;
+      this.i = (this.i + 1) % 16;
+    }
+  },
+
+  follow() {
+    const t = Engine.ctx.currentTime;
+    let step = -1;
+    while (this.heard.length && this.heard[0][0] <= t) step = this.heard.shift()[1];
+    if (step >= 0) Matrix.show(step);
+  },
+};
+
+// THE MATRIX: the beat on the glass, programmed by touch. A tap turns a step loud, then soft,
+// then off, and lets you hear the drum as it goes in. The transport's keys sit above it.
+const Matrix = {
+  cells: {}, lamps: [], lit: -1, armedUntil: 0, armTimer: 0,
+
+  init() {
+    const grid = document.getElementById('drumGrid');
+    const row = (label, make) => {
+      const l = document.createElement('span'); l.className = 'dl'; l.textContent = label; grid.append(l);
+      for (let g = 0; g < 4; g++) {
+        const four = document.createElement('div'); four.className = 'four';
+        for (let j = 0; j < 4; j++) four.append(make(g * 4 + j));
+        grid.append(four);
+      }
+    };
+    row('', i => { const e = document.createElement('i'); e.className = 'lamp'; this.lamps[i] = e; return e; });
+    for (const [r, name] of DRUM_ROWS) {
+      this.cells[r] = [];
+      row(name, i => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'cell' + (i % 4 ? '' : ' one');
+        b.setAttribute('aria-label', `${name}, step ${i + 1}`);
+        b.addEventListener('pointerdown', e => { e.preventDefault(); this.tap(r, i); });
+        this.cells[r][i] = b;
+        return b;
+      });
+    }
+    const $ = id => document.getElementById(id);
+    touchKey($('drumPlay'), () => Drums.toggle());
+    touchKey($('beatPrev'), () => setDrum('slot', (S.drums.slot + BEATS.length - 1) % BEATS.length));
+    touchKey($('beatNext'), () => setDrum('slot', (S.drums.slot + 1) % BEATS.length));
+    touchKey($('bpmDown'), () => setDrum('bpm', Math.max(60, S.drums.bpm - 1)), true);
+    touchKey($('bpmUp'), () => setDrum('bpm', Math.min(200, S.drums.bpm + 1)), true);
+    touchKey($('kitKey'), () => {
+      const i = KITS.findIndex(k => k[0] === Drums.beat().kit);
+      setDrum('kit', KITS[(i + 1) % KITS.length][0]);
+    });
+    // CLEAR asks twice: the first tap lights it, a second within three seconds empties the beat
+    touchKey($('clearKey'), () => {
+      const key = $('clearKey');
+      clearTimeout(this.armTimer);
+      if (performance.now() < this.armedUntil) {
+        const b = Drums.beat();
+        for (const [r] of DRUM_ROWS) b[r] = EMPTY;
+        this.armedUntil = 0; key.removeAttribute('data-armed');
+        save(); this.paint();
+        return;
+      }
+      this.armedUntil = performance.now() + 3000; key.setAttribute('data-armed', '');
+      this.armTimer = setTimeout(() => key.removeAttribute('data-armed'), 3000);
+    });
+    this.paint();
+  },
+
+  tap(r, i) {
+    const b = Drums.beat(), q = b[r][i], next = q === '.' ? 'x' : q === 'x' ? 'o' : '.';
+    b[r] = b[r].slice(0, i) + next + b[r].slice(i + 1);
+    save();
+    this.paintCell(r, i);
+    if (next !== '.') {
+      Engine.resume();
+      hit(Engine.ctx, Engine.n.drums, r, b.kit, Engine.ctx.currentTime + .005, (next === 'x' ? 1 : .5) * DRUM_TRIM);
+    }
+  },
+
+  paintCell(r, i) {
+    const q = Drums.beat()[r][i], c = this.cells[r][i];
+    c.classList.toggle('x', q === 'x'); c.classList.toggle('o', q === 'o');
+  },
+
+  paint() {
+    for (const [r] of DRUM_ROWS) for (let i = 0; i < 16; i++) this.paintCell(r, i);
+    const b = Drums.beat();
+    document.getElementById('beatName').textContent = b.name;
+    document.getElementById('bpmShow').textContent = `${S.drums.bpm} BPM`;
+    document.getElementById('kitName').textContent = (KITS.find(k => k[0] === b.kit) || KITS[0])[1];
+    document.getElementById('drumPlay').classList.toggle('on', Drums.on);
+    if (Settings.open) Settings.refresh();
+  },
+
+  // the step being heard: its lamp, and its column lit
+  show(step) {
+    if (step === this.lit) return;
+    const mark = (s, on) => {
+      if (s < 0) return;
+      this.lamps[s].classList.toggle('now', on);
+      for (const [r] of DRUM_ROWS) this.cells[r][s].classList.toggle('now', on);
+    };
+    mark(this.lit, false);
+    this.lit = step;
+    mark(step, true);
+  },
+};
+
+// A key on the panel: it goes down under the finger and acts at once; `again` keeps a held
+// key acting (the tempo), the way a held key repeats.
+function touchKey(el, fn, again) {
+  let t = 0;
+  const up = () => { el.classList.remove('down'); clearTimeout(t); };
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    el.classList.add('down');
+    fn();
+    if (again) { const more = d => { t = setTimeout(() => { fn(); more(90); }, d); }; more(400); }
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(ev, up);
+}
+
+// One place the drums' settings change, from a key or from Menu.
+function setDrum(key, v) {
+  if (key === 'kit') Drums.beat().kit = v; else S.drums[key] = v;
+  Engine.applyOutput();
+  save();
+  Matrix.paint();
+}
+
+// ---- controller map -------------------------------------------------------
+// Standard Gamepad API button indices (what the NAN II controller reports).
+const B = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, VIEW: 8, MENU: 9, L3: 10, R3: 11, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
+// THE EIGHT NOTES climb left to right across the pad, like a keyboard (the boss, 2026-09-24):
+// the D-pad left, down, up, right, then the buttons X, A, Y, B -- the middle columns low then high.
+const NOTE_BUTTONS = [B.LEFT, B.DOWN, B.UP, B.RIGHT, B.X, B.A, B.Y, B.B]; // scale degrees 1..8
+
+const PadMap = {
+  btnEls: [], labels: [], labelKey: '', lastOn: [],
+
+  init() {
+    // the map's buttons, and the side column's keys that stand for one (L3, R3)
+    for (const g of document.querySelectorAll('[data-b]')) (this.btnEls[+g.dataset.b] = this.btnEls[+g.dataset.b] || []).push(g);
+    for (const t of document.querySelectorAll('#pad .nl')) this.labels[+t.dataset.deg] = t;
+    this.show(S.map);
+  },
+
+  show(on) { document.getElementById('map').hidden = !on; },
+
+  // Every note button shows the note it would play right now, modifiers included.
+  refreshLabels(oct, acc) {
+    const key = [S.root, S.scale, S.octave, oct, acc].join();
+    if (key === this.labelKey) return;
+    this.labelKey = key;
+    this.labels.forEach((t, deg) => { t.textContent = prettyNote(degreeToMidi(deg, oct, acc)); });
+  },
+
+  showPressed(now) {
+    for (let i = 0; i < this.btnEls.length; i++) {
+      const on = !!now[i];
+      if (on === !!this.lastOn[i]) continue;
+      if (this.btnEls[i]) for (const e of this.btnEls[i]) e.classList.toggle(e.classList.contains('key') ? 'down' : 'on', on);
+      const deg = NOTE_BUTTONS.indexOf(i);
+      if (deg >= 0) this.labels[deg].classList.toggle('on', on);
+    }
+    this.lastOn = now.slice();
+  },
+};
+
+// ---- settings panel (driven by the controller) ----------------------------
+const ms = v => v >= 1 ? `${+v.toFixed(2)} s` : `${Math.round(v * 1000)} ms`;
+const pct = v => `${Math.round(v * 100)}%`;
+const fmtDb = v => v > 0 ? `+${v} dB` : v < 0 ? `-${-v} dB` : 'Flat';
+const upTo = (max, step) => Array.from({ length: Math.round(max / step) + 1 }, (_, i) => +(i * step).toFixed(3));
+
+const ROWS = [
+  { h: 'Play' },
+  { id: 'voice', label: 'Voice', opts: () => VOICES.map(v => [v.id, v.name]) },
+  { id: 'root', label: 'Key', opts: () => NOTE_NAMES.map((n, i) => [i, n]) },
+  { id: 'scale', label: 'Scale', opts: () => SCALES.map(s => [s.id, s.name]) },
+  { id: 'octave', label: 'Base octave', values: [2, 3, 4, 5, 6] },
+  { id: 'bendRange', label: 'Bend range', values: [1, 2, 3, 4, 5, 7, 12], fmt: v => `${v} semitone${v > 1 ? 's' : ''}` },
+  { id: 'map', label: 'Controller map', bool: true, fmt: v => v ? 'On' : 'Off' },
+  { h: () => `Voice · ${curVoice().name}` },
+  { id: 'glide', patch: true, label: 'Glide', values: [0, .01, .02, .03, .05, .07, .09, .12, .16, .2, .3, .45], fmt: v => v ? ms(v) : 'Off' },
+  { id: 'attack', patch: true, label: 'Attack', values: [.002, .005, .01, .02, .03, .05, .08, .12, .2, .35, .6, 1], fmt: ms },
+  { id: 'decay', patch: true, label: 'Decay', values: [.05, .1, .15, .25, .35, .5, .8, 1.2, 2], fmt: ms },
+  { id: 'sustain', patch: true, label: 'Sustain', values: upTo(1, .1), fmt: pct },
+  { id: 'release', patch: true, label: 'Release', values: [.02, .05, .08, .12, .2, .35, .5, .8, 1.2, 2, 3], fmt: ms },
+  { id: 'scoop', patch: true, label: 'Chip scoop', values: [0, 20, 40, 60, 80, 120, 160, 200, 300, 400], fmt: v => v ? `${v} cents` : 'Off' },
+  { id: 'vibrato', patch: true, label: 'Vibrato depth', values: [0, .25, .5, .75, 1, 1.25, 1.5, 2], fmt: pct },
+  { id: 'delayMix', patch: true, label: 'Delay', values: upTo(.7, .05), fmt: pct },
+  { id: 'delayTime', patch: true, label: 'Delay time', values: [.08, .12, .15, .18, .22, .25, .3, .33, .375, .45, .5, .6, .75], fmt: ms },
+  { id: 'reverbMix', patch: true, label: 'Reverb', values: upTo(.8, .05), fmt: pct },
+  // the drums: View starts and stops them; their steps are written by touch, on the matrix
+  { h: 'Drums · View starts, stops' },
+  { id: 'slot', drum: true, label: 'Beat', opts: () => S.drums.beats.map((b, i) => [i, b.name]) },
+  { id: 'bpm', drum: true, label: 'Tempo', values: Array.from({ length: 71 }, (_, i) => 60 + i * 2), fmt: v => `${v} BPM` },
+  { id: 'kit', drum: 'beat', label: 'Kit', opts: () => KITS },
+  { id: 'vol', drum: true, label: 'Drum volume', values: upTo(1, .05), fmt: pct },
+  { h: 'Output' },
+  { id: 'volume', label: 'Volume', values: upTo(1, .05), fmt: pct },
+  ...EQ_BANDS.map((b, i) => ({ id: 'eq' + i, eq: i, label: b.name, values: Array.from({ length: 25 }, (_, k) => k - 12), fmt: fmtDb })),
+  { id: 'eqFlat', label: 'EQ flat', flat: true },
+  { id: 'lite', label: 'Lite mode', bool: true, fmt: v => v ? 'On · no reverb' : 'Off' },
+  { id: 'reset', label: 'Reset everything', action: true },
+];
+ROWS.push({ h: 'Help' }, { id: 'manual', label: 'Manual: what you see', manual: true });
+// On NAN II's shelf the menu's last row goes home: up from the top row lands on it.
+if (ON_B9) ROWS.push({ h: 'NAN II' }, { id: 'exit', label: 'Exit to the Games shelf', exit: true });
+
+const Settings = {
+  open: false, sel: 0, items: [], armedUntil: 0,
+
+  init() {
+    const list = document.getElementById('rows');
+    for (const r of ROWS) {
+      const el = document.createElement('div');
+      if (r.h) { el.className = 'rh'; r.el = el; list.append(el); continue; }
+      el.className = 'row';
+      el.innerHTML = '<span class="lbl"></span><span class="val"><b class="arr">◀</b><output></output><b class="arr">▶</b></span>';
+      el.querySelector('.lbl').textContent = r.label;
+      r.el = el; r.out = el.querySelector('output');
+      this.items.push(r);
+      list.append(el);
+    }
+  },
+
+  get(r) { return r.eq !== undefined ? S.eq[r.eq] : r.drum === 'beat' ? Drums.beat()[r.id] : r.drum ? S.drums[r.id] : r.patch ? curPatch()[r.id] : S[r.id]; },
+
+  display(r) {
+    if (r.exit || r.flat || r.manual) return 'Press A';
+    if (r.action) return performance.now() < this.armedUntil ? 'Press A again' : 'Press A';
+    const v = this.get(r);
+    if (r.opts) { const o = r.opts().find(o => o[0] === v); return o ? o[1] : String(v); }
+    return r.fmt ? r.fmt(v) : String(v);
+  },
+
+  refresh() {
+    for (const r of ROWS) {
+      if (r.h) r.el.textContent = typeof r.h === 'function' ? r.h() : r.h;
+      else r.out.textContent = this.display(r);
+    }
+    this.items.forEach((r, i) => r.el.classList.toggle('sel', i === this.sel));
+  },
+
+  toggle() { if (this.open) this.close(); else this.show(); },
+
+  show() {
+    this.open = true;
+    Engine.noteOff();
+    Input.held = [];
+    Hud.bend = Hud.vib = 0;
+    document.getElementById('settings').hidden = false;
+    this.refresh();
+    this.items[this.sel].el.scrollIntoView({ block: 'nearest' });
+  },
+
+  close() {
+    this.open = false;
+    this.armedUntil = 0;
+    document.getElementById('settings').hidden = true;
+  },
+
+  // wrap: a fresh press past either end goes round to the other (a held one stops there)
+  move(d, wrap) {
+    const last = this.items.length - 1;
+    this.sel = wrap && this.sel + d < 0 ? last : wrap && this.sel + d > last ? 0 : clamp(this.sel + d, 0, last);
+    this.armedUntil = 0;
+    this.refresh();
+    this.items[this.sel].el.scrollIntoView({ block: 'nearest' });
+  },
+
+  change(dir) {
+    const r = this.items[this.sel], v = this.get(r);
+    if (r.action || r.exit || r.flat || r.manual) return;
+    let next;
+    if (r.bool) next = !v;
+    else if (r.opts) {
+      const o = r.opts(), i = o.findIndex(x => x[0] === v);
+      next = o[(i + dir + o.length) % o.length][0];
+    } else {
+      let i = 0;
+      r.values.forEach((x, k) => { if (Math.abs(x - v) < Math.abs(r.values[i] - v)) i = k; });
+      next = r.values[clamp(i + dir, 0, r.values.length - 1)];
+    }
+    this.set(r, next);
+  },
+
+  activate() {
+    const r = this.items[this.sel];
+    if (r.exit) { exitGame(); return; }
+    if (r.manual) { this.close(); Tour.start(); return; }
+    if (r.flat) { flatEq(); return; }
+    if (!r.action) { this.change(1); return; }
+    if (performance.now() < this.armedUntil) { resetAll(); this.armedUntil = 0; }
+    else this.armedUntil = performance.now() + 3000;
+    this.refresh();
+  },
+
+  set(r, v) {
+    if (r.drum) { setDrum(r.id, v); return; }
+    if (r.eq !== undefined) { S.eq[r.eq] = v; Engine.applyEq(); save(); this.refresh(); Mixer.say(r.eq); return; }
+    if (r.patch) curPatch()[r.id] = v; else S[r.id] = v;
+    if (r.id === 'voice') Engine.applyVoice();
+    if (r.id === 'map') PadMap.show(S.map);
+    Engine.applyPatch();
+    Engine.applyOutput();
+    save();
+    this.refresh();
+    if (r.id === 'volume') Mixer.say(NB);
+  },
+};
+
+function flatEq() {
+  S.eq = EQ_BANDS.map(() => 0);
+  Engine.applyEq(); save(); Settings.refresh(); Mixer.say(-1, 'EQ flat');
+}
+const VOLUME_ROW = ROWS.find(r => r.id === 'volume');
+const NB = EQ_BANDS.length;   // the mixer's columns: the bands, then Volume
+const setVolume = v => Settings.set(VOLUME_ROW, clamp(v, 0, 1));
+
+// ---- THE MIXER on the top bar: the EQ's faders and Volume, by touch -------------------
+// Each column's LEDs are the sound in its band right now (Volume's: the whole mix), and the
+// cap is the setting. A touch puts the cap under the finger and dragging moves it; a second
+// tap on the same column within a moment puts it back (EQ flat, Volume 80%).
+// FAT-FINGER FRIENDLY (the boss, 2026-09-25: "the eq is not fat finger friendly"): wide
+// columns and big caps; the whole screen box takes the touch, the nearest column wins; and a
+// drag is RELATIVE -- put a finger anywhere on a fader and slide, it moves from where it is,
+// a full sweep (24 dB, or Volume 0-100%) over DRAG px, so a tap never jumps it.
+const Mixer = {
+  cv: null, g: null, w: 0, h: 62, dpr: 1, lv: EQ_BANDS.map(() => 0).concat(0), drag: -1, tap: { i: -1, t: 0 }, sayTimer: 0,
+  freq: null, wave: null, y0: 0, v0: 0,
+  COLW: 62, GAP: 8, VGAP: 14, SEGS: 10, TOP: 4, BOT: 50, DRAG: 120,
+  colX(i) { return i < NB ? i * (this.COLW + this.GAP) : NB * (this.COLW + this.GAP) + this.VGAP; },
+  init() {
+    const cv = this.cv = document.getElementById('mix');
+    this.g = cv.getContext('2d');
+    this.w = this.colX(NB) + this.COLW; this.dpr = window.devicePixelRatio || 1;
+    cv.style.width = this.w + 'px'; cv.style.height = this.h + 'px';
+    cv.width = Math.round(this.w * this.dpr); cv.height = Math.round(this.h * this.dpr);
+    const box = this.box = document.getElementById('mixScreen') || cv;
+    box.addEventListener('pointerdown', e => this.down(e));
+    box.addEventListener('pointermove', e => { if (this.drag >= 0) this.set(this.drag, clamp(this.v0 + (this.y0 - e.clientY) / this.DRAG, 0, 1)); });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) box.addEventListener(ev, () => { this.drag = -1; });
+    this.say();
+    this.paint();
+  },
+  // the column nearest the finger, anywhere in the screen box
+  col(e) {
+    const b = this.cv.getBoundingClientRect(), x = (e.clientX - b.left) * this.w / b.width;
+    let best = 0, dist = Infinity;
+    for (let i = 0; i <= NB; i++) { const d = Math.abs(x - (this.colX(i) + this.COLW / 2)); if (d < dist) { dist = d; best = i; } }
+    return best;
+  },
+  value(i) { return i === NB ? S.volume : (S.eq[i] + 12) / 24; },
+  down(e) {
+    const i = this.col(e);
+    e.preventDefault();
+    const now = performance.now();
+    if (this.tap.i === i && now - this.tap.t < 380) { this.tap.i = -1; this.reset(i); return; }
+    this.tap = { i, t: now };
+    this.drag = i; this.y0 = e.clientY; this.v0 = this.value(i);
+    try { this.box.setPointerCapture(e.pointerId); } catch (_) { /* a plain drag still works */ }
+    this.say(i);
+  },
+  set(i, f) {
+    if (i === NB) { const v = Math.round(f * 20) / 20; if (v !== S.volume) setVolume(v); else this.say(NB); return; }
+    const db = Math.round(f * 24 - 12);
+    if (db !== S.eq[i]) { S.eq[i] = db; Engine.applyEq(); save(); if (Settings.open) Settings.refresh(); }
+    this.say(i);
+  },
+  reset(i) {
+    if (i === NB) setVolume(.8);
+    else { S.eq[i] = 0; Engine.applyEq(); save(); if (Settings.open) Settings.refresh(); this.say(i); }
+  },
+  // the readout: what the finger is on, then back to the summary
+  say(i, text) {
+    const el = document.getElementById('mixDisp'); if (!el) return;
+    clearTimeout(this.sayTimer);
+    const summary = () => `Vol ${pct(S.volume)} · EQ ${S.eq.every(v => !v) ? 'flat' : 'on'}`;
+    if (text) el.textContent = text;
+    else if (i === NB) el.textContent = `Volume ${pct(S.volume)}`;
+    else if (i >= 0) el.textContent = `${EQ_BANDS[i].name} ${fmtDb(S.eq[i])}`;
+    else { el.textContent = summary(); return; }
+    this.sayTimer = setTimeout(() => { el.textContent = summary(); }, 2500);
+  },
+  // levels: each band's loudest bin, and the whole mix's peak, rising at once and falling slowly
+  listen(dt) {
+    const m = Engine.n.meter; if (!m) return;
+    if (!this.freq) { this.freq = new Float32Array(m.frequencyBinCount); this.wave = new Float32Array(m.fftSize); }
+    m.getFloatFrequencyData(this.freq);
+    const hz = Engine.ctx.sampleRate / m.fftSize, fall = dt * 1.6;
+    EQ_SPAN.forEach(([lo, hi], i) => {
+      let db = -Infinity;
+      for (let k = Math.max(1, Math.floor(lo / hz)); k <= Math.min(this.freq.length - 1, Math.ceil(hi / hz)); k++) db = Math.max(db, this.freq[k]);
+      const v = clamp((db + 80) / 60, 0, 1);
+      this.lv[i] = v > this.lv[i] ? v : Math.max(v, this.lv[i] - fall);
+    });
+    m.getFloatTimeDomainData(this.wave);
+    let pk = 0; for (let k = 0; k < this.wave.length; k++) pk = Math.max(pk, Math.abs(this.wave[k]));
+    const v = pk > 0 ? clamp((20 * Math.log10(pk) + 42) / 42, 0, 1) : 0;
+    this.lv[NB] = v > this.lv[NB] ? v : Math.max(v, this.lv[NB] - fall);
+  },
+  paint() {
+    const g = this.g, d = this.dpr, span = this.BOT - this.TOP, segH = (span - (this.SEGS - 1)) / this.SEGS;
+    g.setTransform(d, 0, 0, d, 0, 0);
+    g.clearRect(0, 0, this.w, this.h);
+    for (let i = 0; i <= NB; i++) {
+      const x = this.colX(i), cx = x + this.COLW / 2, lit = Math.round(this.lv[i] * this.SEGS);
+      for (let k = 0; k < this.SEGS; k++) {
+        g.fillStyle = k >= lit ? 'rgba(255,178,74,.1)' : k === this.SEGS - 1 ? '#ff4a3d' : k >= this.SEGS - 3 ? '#ff7a1f' : '#ffb24a';
+        g.fillRect(cx - 13, this.BOT - (k + 1) * segH - k, 26, segH);
+      }
+      if (i < NB) {                                 // the flat line, marked at the sides
+        const zy = this.BOT - span / 2;
+        g.fillStyle = 'rgba(255,178,74,.4)'; g.fillRect(x, zy - .5, 4, 1); g.fillRect(x + this.COLW - 4, zy - .5, 4, 1);
+      }
+      const f = this.value(i), cy = this.BOT - f * span;
+      const grd = g.createLinearGradient(0, cy - 6, 0, cy + 6);
+      grd.addColorStop(0, '#3a3a3e'); grd.addColorStop(.5, '#1a1a1c'); grd.addColorStop(1, '#0a0a0b');
+      g.fillStyle = grd; g.beginPath();
+      if (g.roundRect) g.roundRect(cx - 25, cy - 6, 50, 12, 2); else g.rect(cx - 25, cy - 6, 50, 12);
+      g.fill(); g.strokeStyle = this.drag === i ? '#ffb24a' : '#000'; g.lineWidth = 1; g.stroke();
+      g.fillStyle = this.drag === i ? '#ffd9a0' : 'rgba(228,221,204,.6)'; g.fillRect(cx - 18, cy - .5, 36, 1.5);
+      g.font = '10px ' + B9FONT; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+      g.fillStyle = i === NB ? 'rgba(255,178,74,.85)' : 'rgba(255,178,74,.6)';
+      g.fillText(i === NB ? 'VOL' : EQ_BANDS[i].tag, cx, this.h - 1);
+    }
+  },
+  draw(dt) { this.listen(dt); this.paint(); },
+};
+
+function resetAll() {
+  S = makeSettings(null);
+  Engine.applyVoice(); Engine.applyPatch(); Engine.applyOutput(); Engine.applyEq();
+  Mixer.say();
+  PadMap.show(S.map);
+  Matrix.paint();
+  save();
+}
+
+function cycleVoice(dir) {
+  const i = VOICES.findIndex(v => v.id === S.voice);
+  S.voice = VOICES[(i + dir + VOICES.length) % VOICES.length].id;
+  Engine.applyVoice(); Engine.applyPatch();
+  if (Settings.open) Settings.refresh();
+  save();
+}
+// THE VOICE KEYS take a finger too (the boss, 2026-09-25: "the voice buttons dont work" -- they
+// were only lamps for the stick clicks)
+for (const [id, dir] of [['voicePrev', -1], ['voiceNext', 1]]) {
+  const k = document.getElementById(id);
+  if (k) k.addEventListener('click', () => { Engine.resume(); cycleVoice(dir); });
+}
+
+// EXIT: back to NAN II's media library, on the Games tab -- the games' own EXIT GAME. Inside
+// NAN II's face the page sits in the face's frame and NAN II's screen state is the truth, so the
+// face server is asked to change it (the same /api/screen the shelf's cards use to open a
+// game). Opened on its own from NAN II's shelf, the page just goes there itself.
+let exiting = false;
+function exitGame() {
+  if (exiting) return;
+  exiting = true;
+  Engine.noteOff();
+  Drums.on = false;
+  const url = '../';
+  let inB9 = false;
+  try { inB9 = window.parent !== window && !!parent.document.getElementById('dock'); } catch (e) { /* not NAN II's face */ }
+  if (!inB9) { location.href = url; return; }
+  fetch('/api/screen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ src: url }) })
+    .then(r => { if (!r.ok) throw 0; }).catch(() => { location.href = url; });
+}
+
+// ---- controller input -----------------------------------------------------
+const Input = { padId: null, prev: [], held: [], rep: {}, oct: 0, acc: 0, stickAcc: 0 };
+const deadzone = v => Math.sign(v) * Math.max(0, (Math.abs(v) - .15) / .85);
+
+function readPad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let pick = null;
+  for (const p of pads) {
+    if (!p || !p.connected) continue;
+    if (p.mapping === 'standard') return p;
+    pick = pick || p;
+  }
+  return pick;
+}
+
+// 1 on press, then 2 after a short hold, then 2 quickly while held (for menus); 0 otherwise
+function repeat(i, now, ts) {
+  const r = Input.rep;
+  if (!now[i]) { r[i] = 0; return 0; }
+  if (!r[i]) { r[i] = ts + 380; return 1; }
+  if (ts >= r[i]) { r[i] = ts + 90; return 2; }
+  return 0;
+}
+
+function playInput(now, hit, axes) {
+  if (hit(B.VIEW)) Drums.toggle();   // the map's on/off lives in Menu now
+  if (hit(B.L3)) cycleVoice(-1);
+  if (hit(B.R3)) cycleVoice(1);
+
+  // Last-pressed note wins; letting go of it falls back to a note still held.
+  let fresh = false;
+  NOTE_BUTTONS.forEach((btn, deg) => {
+    if (hit(btn)) { Input.held = Input.held.filter(d => d !== deg); Input.held.push(deg); fresh = true; }
+    else if (!now[btn]) Input.held = Input.held.filter(d => d !== deg);
+  });
+  Input.oct = (now[B.RB] ? 1 : 0) - (now[B.LB] ? 1 : 0);
+  // FLAT AND SHARP: the left stick pushed left or right and held. The triggers aren't used (NAN II's
+  // pad sends none; the boss dropped them, 2026-09-25). Only a mostly-sideways push counts, so a
+  // bend that drifts off vertical doesn't; once on, it holds until the stick is well back in.
+  const sx = axes[0] || 0, sy = axes[1] || 0;
+  const push = Math.abs(sx) > (Input.stickAcc ? .4 : .6) && Math.abs(sx) > Math.abs(sy) * .8 ? Math.sign(sx) : 0;
+  Input.stickAcc = push;
+  Input.acc = push;
+
+  if (Input.held.length) {
+    const midi = degreeToMidi(Input.held[Input.held.length - 1], Input.oct, Input.acc);
+    if (fresh || !Engine.gate) { Engine.noteOn(midi); Fx.spawn(midi); }
+    else if (midi !== Engine.midi) { Engine.glideTo(midi); Fx.spawn(midi); } // a modifier changed under a held note
+  } else if (Engine.gate) Engine.noteOff();
+
+  Hud.bend = -deadzone(axes[1] || 0) * S.bendRange; // stick up bends up
+  Hud.vib = Math.min(1, deadzone(Math.hypot(axes[2] || 0, axes[3] || 0)));
+  Engine.setExpression(Hud.bend, Hud.vib);
+}
+
+function settingsInput(now, hit, ts) {
+  if (hit(B.B)) { Settings.close(); return; }
+  if (hit(B.VIEW)) Drums.toggle();   // start the beat while choosing one
+  if (hit(B.A)) Settings.activate();
+  let r;
+  if ((r = repeat(B.UP, now, ts))) Settings.move(-1, r === 1);
+  if ((r = repeat(B.DOWN, now, ts))) Settings.move(1, r === 1);
+  if (repeat(B.LEFT, now, ts)) Settings.change(-1);
+  if (repeat(B.RIGHT, now, ts)) Settings.change(1);
+  Engine.setExpression(0, 0);
+}
+
+// The pad's own name is never shown: on NAN II it is the NAN II controller.
+function onPadFound(pad) {
+  Input.padId = pad.id;
+  document.getElementById('splash').hidden = true;
+  document.getElementById('mapBanner').hidden = pad.mapping === 'standard';
+}
+
+function onPadLost() {
+  Input.padId = null;
+  Input.held = [];
+  Input.prev = [];
+  Engine.noteOff();
+  Hud.bend = Hud.vib = 0;
+  Engine.setExpression(0, 0);
+  document.getElementById('splash').hidden = false;
+  document.getElementById('mapBanner').hidden = true;
+}
+
+// ---- HUD ------------------------------------------------------------------
+const Hud = { bend: 0, vib: 0, cache: {} };
+const els = {};
+function setOnce(key, value, apply) {
+  if (Hud.cache[key] === value) return;
+  Hud.cache[key] = value;
+  apply(value);
+}
+
+function updateHud() {
+  const midi = Engine.midi;
+  setOnce('note', midi, m => { els.note.textContent = m == null ? '—' : prettyNote(m); });
+  setOnce('gate', Engine.gate, g => els.note.classList.toggle('off', !g));
+  setOnce('key', `Key ${NOTE_NAMES[S.root]} · octave ${S.octave}|${scaleById(S.scale).name}`, t => {
+    els.keyInfo.replaceChildren(...t.split('|').map(line => { const e = document.createElement('span'); e.textContent = line; return e; }));
+  });
+  setOnce('voice', curVoice().name, t => { els.voiceName.textContent = t; });
+  const oct = Settings.open ? 0 : Input.oct, acc = Settings.open ? 0 : Input.acc;
+  setOnce('mods', `${oct}${acc}`, () => {
+    els.modLB.classList.toggle('on', oct < 0); els.modRB.classList.toggle('on', oct > 0);
+    els.modLT.classList.toggle('on', acc < 0); els.modRT.classList.toggle('on', acc > 0);
+    els.stickFlat.classList.toggle('on', acc < 0); els.stickSharp.classList.toggle('on', acc > 0);
+  });
+  PadMap.refreshLabels(oct, acc);
+  setOnce('bend', Math.round(clamp(Hud.bend / S.bendRange, -1, 1) * 100), v => { els.bendBar.style.transform = `scaleX(${v / 100})`; });
+  setOnce('vib', Math.round(Hud.vib * 100), v => { els.vibBar.style.transform = `scaleX(${v / 100})`; });
+  setOnce('glow', Math.round(Engine.envVis * 50), v => { els.glow.style.opacity = (v / 50).toFixed(2); });
+  setOnce('pad', Input.padId !== null, on => { els.padLamp.classList.toggle('on', on); });
+  // SOUND: amber while the sound runs; red while it waits for a tap, once there's a pad to play
+  const snd = Engine.ctx.state === 'running' ? 'on' : Input.padId !== null ? 'red' : '';
+  setOnce('sound', snd, s => {
+    els.soundLamp.classList.toggle('on', s === 'on'); els.soundLamp.classList.toggle('red', s === 'red');
+    els.audioBanner.hidden = s !== 'red';
+  });
+}
+
+// ---- main loop ------------------------------------------------------------
+// THE CONTROLLER is read 250 times a second on its own timer, not once a frame: a note can
+// start up to 16 ms sooner (2026-09-24, the boss: "slight lag from button to note"). The
+// frame only draws.
+function pollPad(ts) {
+  const pad = readPad();
+  if (!pad) {
+    if (Input.padId !== null) onPadLost();
+  } else {
+    if (Input.padId === null) onPadFound(pad);
+    const now = pad.buttons.map(b => !!b && (b.pressed || b.value > .5));
+    const hit = i => now[i] && !Input.prev[i];
+    if (Tour.open) { Tour.pad(pad); Input.prev = now; return; }
+    if (now.some((on, i) => on && !Input.prev[i])) Engine.resume();
+    if (hit(B.MENU)) Settings.toggle();
+    else if (Settings.open) settingsInput(now, hit, ts);
+    else playInput(now, hit, pad.axes);
+    PadMap.showPressed(now);
+    Input.prev = now;
+  }
+}
+let lastTs = 0;
+function frame(ts) {
+  const dt = lastTs ? Math.min(.05, (ts - lastTs) / 1000) : 0;
+  lastTs = ts;
+  Engine.tick(dt);
+  Fx.draw(dt);
+  Mixer.draw(dt);
+  Drums.follow();
+  updateHud();
+  requestAnimationFrame(frame);
+}
+
+for (const id of ['note', 'keyInfo', 'voiceName', 'modLB', 'modRB', 'modLT', 'modRT', 'bendBar', 'vibBar', 'glow', 'audioBanner', 'padLamp', 'soundLamp', 'stickFlat', 'stickSharp']) els[id] = document.getElementById(id);
+Engine.init();
+Fx.init();
+PadMap.init();
+Settings.init();
+Mixer.init();
+Matrix.init();
+setInterval(() => Drums.tick(), 25);
+setInterval(() => pollPad(performance.now()), 4);
+// THE MANUAL: what each part of the screen is, one at a time
+Tour.init('Fossegrim', [
+  { title: 'Fossegrim', text: 'The bard\u2019s instrument, played on the NAN II controller: one voice at a time, with a drum machine under it. This tour shows each part of the screen. <b>Next</b> goes on, <b>Close</b> stops any time.' },
+  { sel: '.notemod', title: 'Note', text: 'The note sounding now, and under it the key and scale you are playing in.' },
+  { sel: '.scopemod', title: 'Scope', text: 'The sound itself, drawn as it plays. Each note you play rises off the line.' },
+  { sel: '#map', title: 'Controller map', text: 'Which note each button plays right now, lit where your thumb is. The D-pad and X A Y B climb the scale from left to right; the map always shows the real note.' },
+  { sel: '.drummod', title: 'Drums', text: 'Tap a square to make it loud, then soft, then off. <b>Play</b> starts the beat (so does View on the controller), <b>Beat</b> picks one of eight, <b>Tempo</b> and <b>Kit</b> change it, and <b>Clear</b>, pressed twice, empties it.' },
+  { sel: '.side > .module:nth-of-type(1)', title: 'Voice', text: 'The voice you are playing. Tap <b>◀</b> or <b>▶</b>, or click the left stick (<b>L3</b>) or the right stick (<b>R3</b>), for the one before or after.' },
+  { sel: '.side > .module:nth-of-type(2)', title: 'Hold', text: 'These light while you hold them: <b>LB</b> plays an octave down and <b>RB</b> an octave up. Push the left stick sideways and hold for <b>flat</b> or <b>sharp</b>.' },
+  { sel: '.side > .module:nth-of-type(3)', title: 'Sticks', text: 'How far the left stick is bending the note (up or down), and how much vibrato the right stick is adding.' },
+  { sel: '#mixer', title: 'Mixer', text: '<b>Bass</b>, <b>Mid</b> and <b>Treb</b> shape the sound, and their lights bounce with it. <b>Vol</b> is the volume. Put a finger anywhere on a fader and slide it up or down; tap one twice to put it back.' },
+  { sel: '.lamps', title: 'Lamps', text: '<b>NAN II controller</b> lights when a controller is connected. <b>Sound</b> turns red if the screen is holding the sound back: tap the screen once.' },
+  { title: 'Menu', text: 'The <b>Menu</b> button opens the settings: voice, key, scale and octave, how each voice sounds, the drums, the mixer, and this manual. The D-pad moves, <b>A</b> changes, <b>B</b> closes.' },
+  { sel: '#exitKey', title: 'Exit', text: 'Back to the Games shelf. Everything you set here is kept for next time.' },
+], document.getElementById('manualKey'));
+if (ON_B9) {
+  const exitKey = document.getElementById('exitKey');
+  exitKey.hidden = false;
+  exitKey.addEventListener('click', exitGame);
+}
+addEventListener('resize', () => Fx.resize());
+// A screen tap (or any key) also unlocks audio if the browser is holding it back.
+for (const ev of ['pointerdown', 'touchstart', 'keydown']) addEventListener(ev, () => Engine.resume(), { passive: true });
+addEventListener('gamepadconnected', () => Engine.resume());
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

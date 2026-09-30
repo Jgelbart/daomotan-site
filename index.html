@@ -75,7 +75,10 @@
   .wordmark b { font-family: var(--wide); font-weight: 400; font-size: 20px; letter-spacing: 0.04em; }
   .wordmark span { font-family: var(--body); font-stretch: 125%; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); }
   nav { display: flex; gap: 28px; }
-  nav a { text-decoration: none; font-family: var(--mono); font-size: 14px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+  nav a { text-decoration: none; font-family: var(--mono); font-size: 14px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+  nav a.arcade { color: var(--rust); }
+  @media (max-width: 1180px) { .wordmark span { display: none; } nav { gap: 20px; } }
+  @media (max-width: 900px) { nav a:not(.arcade) { display: none; } }   /* the way into the arcade always shows */
   nav a:hover { color: var(--ink); }
 
   /* Hero: the logo art, with its stripes carried out to the screen edges */
@@ -154,6 +157,22 @@
   .also { margin: 36px 0 0; color: var(--muted); font-size: 18px; }
   .also b { color: var(--ink); font-weight: 600; }
 
+  /* The way into the arcade: a piece of NAN II's green screen set into the page */
+  .arcade-strip { padding: 0 0 clamp(72px, 10vw, 120px); }
+  .arcade-card { display: grid; grid-template-columns: 1.15fr 1fr; align-items: center; text-decoration: none;
+                 background: #020704; color: #c6f2d1; border-radius: 24px; overflow: hidden;
+                 box-shadow: 0 0 0 1px rgba(98,255,126,.18); transition: box-shadow .2s; }
+  .arcade-card:hover { box-shadow: 0 0 0 1px rgba(98,255,126,.6), 0 0 32px rgba(98,255,126,.12); }
+  .arcade-card img { width: 100%; height: 100%; object-fit: cover; aspect-ratio: 16 / 10; }
+  .arcade-card .txt { padding: clamp(24px, 4vw, 48px); }
+  .arcade-card .label { color: #62ff7e; }
+  .arcade-card h2 { margin: 14px 0 12px; font-size: clamp(26px, 3.2vw, 38px); font-stretch: 110%; font-weight: 560;
+                    line-height: 1.1; color: #62ff7e; text-shadow: 0 0 10px rgba(98,255,126,.35); }
+  .arcade-card p { margin: 0; font-size: 17px; color: #a9d8b5; }
+  .arcade-card .go { display: inline-block; margin-top: 22px; padding: 12px 22px; border-radius: 999px;
+                     background: #62ff7e; color: #020704; font-family: var(--mono); font-size: 15px;
+                     letter-spacing: .14em; text-transform: uppercase; }
+
   /* Make it yours */
   .custom-grid { display: grid; grid-template-columns: 7fr 5fr; gap: 16px; }
   .brain {
@@ -223,6 +242,7 @@
     .points { grid-template-columns: repeat(2, 1fr); }
   }
   @media (max-width: 860px) {
+    .arcade-card { grid-template-columns: 1fr; }
     .intro-grid { grid-template-columns: 1fr; }
     .custom-grid { grid-template-columns: 1fr; }
     .story-grid { grid-template-columns: 1fr; }
@@ -235,7 +255,6 @@
   }
   @media (max-width: 640px) {
     body { font-size: 17px; }
-    nav { display: none; }
     .wordmark span { display: none; }
     .features { grid-template-columns: 1fr; gap: 12px; }
     .card { padding: 22px; }
@@ -253,6 +272,7 @@
       <a href="#custom">Make it yours</a>
       <a href="#yours">No phone home</a>
       <a href="#story">Story</a>
+      <a class="arcade" href="arcade/">Arcade</a>
     </nav>
   </div>
 </header>
@@ -385,6 +405,20 @@
       </div>
 
       <p class="also"><b>And a little more:</b> its very own theme music, a few instruments to play along with, stereo speakers in its chest, and a touchscreen with buttons big enough for any finger.</p>
+    </div>
+  </section>
+
+  <section class="arcade-strip" aria-label="NAN II Arcade">
+    <div class="wrap">
+      <a class="arcade-card" href="arcade/">
+        <img src="arcade/img/daomsys-boot.jpg" alt="The DAOMSYS boot screen: NAN II drawn in green phosphor beside DAOMOTAN, Personal Robotics" loading="lazy">
+        <div class="txt">
+          <div class="label">NAN II Arcade</div>
+          <h2>Play NAN II's games right here.</h2>
+          <p>Saves The Humans, Down The Wormhole and Through The Black Hole, plus Facemaker, Melody Cartridge and Fossegrim. The same games that run on NAN II, in your browser.</p>
+          <span class="go">Enter the arcade &rarr;</span>
+        </div>
+      </a>
     </div>
   </section>
 

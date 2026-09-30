@@ -1,0 +1,1451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script>window.DAOMOTAN_ARCADE = true;</script>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>NAN II Facemaker</title>
+<!--
+  NAN II FACEMAKER: the face editor (b9_face_editor.html), made into a cartridge on NAN II's games
+  shelf at the boss's request (2026-09-24). Draw NAN II's faces on his own screen, by touch or
+  with the NAN II controller, see them move the way he wears them, and put them on his face.
+
+  ON NAN II'S SHELF it lives at ~/b9/media/games/NAN II Facemaker/index.html, edited on the Mac in
+  ~/b9-games/NAN II Facemaker/. The editor it came from is left where it was (~/b9, linked from
+  Settings); a copy of it as it stood is at ~/b9-games-originals/.
+
+  THE FACES are NAN II's real ones: b9_expressions.json, read from /api/expressions and written
+  with /api/expressions/save, the face server's own routes. The server keeps the previous set
+  once, as b9_expressions.json.bak, and the live face re-reads it on the spot. Nothing is
+  baked in here: a page that can't reach NAN II comes up empty and saving stays off (the
+  editor's rule, and the reason for it still stands -- an empty set written over the boss's
+  art is the one act that can't be taken back).
+
+  What's different from the editor:
+    - NAN II's look: black housing, keys, amber screens with CRT glass, B9 Sans. Nothing pulses.
+    - no "save to slot": every stroke is kept in the working set at once, and SAVE TO NAN II
+      (pressed twice) puts the whole set on his face. A lit LED on SAVE and a dot on a face's
+      card mean it's changed and not on NAN II yet. PUT BACK (twice) throws the changes away.
+    - a drawing not yet on NAN II is kept in this browser as a draft and comes back next time,
+      unless NAN II's faces were changed from somewhere else in between.
+    - GLASS shades what NAN II's housing hides: his screen is 1280x800 with capsules 22 px apart,
+      so only columns 3-60 and rows 4-31 of the 64x36 grid show through the window
+      (b9_face.html: frameMap, WIN). The mark is centred by its own ink, so its window moves.
+    - ON NAN II'S GLASS plays the face the way he wears it (b9_face.html pickFrame): idle blinks
+      every 4 s, talking cycles its three mouths, a mouth frame is heard in a sentence.
+    - an empty drawing means the face isn't drawn at all, and NAN II falls back the way he
+      does for any missing face (no blink, say).
+    - each face has its own undo; ONION ghosts the face it's drawn against (blink under
+      idle, the previous talking mouth, rest under a mouth, idle under the rest).
+
+  Controls (the NAN II controller)
+    Left stick / D-pad   move the cursor; push past the edge to reach the keys
+    A (hold)             paint with the brush -- or rub out, with Erase
+    L3 / R3              Brush <-> Erase / next brush size
+    X / Y                undo / redo
+    LB / RB              previous / next face
+    Right stick          nudge the whole drawing
+    View                 glass on / off
+    Menu                 save to NAN II (twice)
+    B                    back to the board from the keys; on the board, exit
+  MANUAL (the boss, 2026-09-25): a key by EXIT starts a tour of the screen, one part at a time
+  (tour_kit.py in ~/b9-music/B9 Theme/source; sync_tour.py keeps the kit here in step).
+  Touch: tap or drag. Keyboard: Ctrl-Z / Ctrl-Shift-Z, arrows nudge, B brush, E erase, 1 2 3 size.
+  THE BRUSH (the boss, 2026-09-25): the first tool row is BRUSH and ERASE (the lit key is the tool) and
+  three round tips, 1, 3 and 5 capsules across. Before, a stroke switched the first capsule it touched and
+  painted the rest the same way; now Brush only ever lights capsules and Erase only ever puts them out.
+-->
+<style>
+@font-face{font-family:'B9 Sans';src:url('../fonts/B9Sans.ttf') format('truetype');font-display:swap}
+:root{
+  --amber:#ffb24a; --orange:#ff7a1f; --rust:#b8471f; --hot:#ffd9a0;
+  --ink:#e8c07a; --muted:#7a6540; --legend:rgba(228,221,204,.66);
+  --screen:#0b0906; --glass:#050506;
+  --glow:rgba(255,178,74,.55); --halo:rgba(255,178,74,.22);
+  --b9:'B9 Sans', ui-monospace, "SF Mono", Menlo, monospace;
+  --narrow:"Nimbus Sans Narrow","Liberation Sans Narrow","Arial Narrow","Helvetica Neue",Helvetica,sans-serif;
+  --stripe:linear-gradient(#ffb24a 0 2px, #ff7a1f 2px 4px, #b8471f 4px 6px);
+}
+*{box-sizing:border-box}
+html,body{margin:0; height:100%; overflow:hidden; color:var(--ink); font-family:var(--narrow);
+  -webkit-user-select:none; user-select:none}
+body{background:radial-gradient(900px 420px at 18% -8%, rgba(255,255,255,.05), transparent 60%),
+                linear-gradient(#121214, #0b0b0c 45%, #0d0d0e);}
+[hidden]{display:none!important}
+
+.housing{position:fixed; inset:0; display:grid; grid-template-rows:auto minmax(0,1fr); padding:0 16px 14px}
+
+/* THE TOP BAR: the name, the vents, the lamps, EXIT -- and the 70s stripe under it */
+.topbar{position:relative; display:flex; align-items:center; gap:18px; margin:0 -16px 14px; padding:8px 16px 14px;
+  background:linear-gradient(#1a1a1c, #0e0e0f); box-shadow:inset 0 1px 0 rgba(255,255,255,.09), 0 12px 24px rgba(0,0,0,.7)}
+.topbar::after{content:''; position:absolute; left:0; right:0; bottom:0; height:6px; background:var(--stripe); opacity:.85}
+.brand{flex:none}
+.brand h1{margin:0 0 5px; font:400 34px/1 var(--b9); letter-spacing:.14em; color:var(--amber); text-shadow:0 0 14px rgba(255,178,74,.45)}
+.brand p{margin:0; font-size:12px; font-weight:700; font-stretch:condensed; letter-spacing:.24em; text-transform:uppercase; color:var(--legend)}
+.vents{flex:1; align-self:stretch; min-width:40px; margin:12px 0; border-radius:4px;
+  background:repeating-linear-gradient(90deg, #050506 0 4px, transparent 4px 11px); box-shadow:inset 0 1px 2px rgba(0,0,0,.8); opacity:.9}
+.well{background:var(--glass); border-radius:6px; box-shadow:inset 0 3px 6px rgba(0,0,0,.95), inset 0 -1px 0 rgba(255,255,255,.05),
+  0 1px 0 rgba(255,255,255,.07), 0 -1px 0 rgba(0,0,0,.85)}
+.lamps{flex:none; display:flex; gap:6px; padding:6px}
+/* a tell-tale, the face's own: dark until it has something to say */
+.tell{display:flex; align-items:center; justify-content:center; height:32px; padding:0 14px 0 calc(14px + .16em); border-radius:3px;
+  font-family:var(--narrow); font-stretch:condensed; font-weight:700; font-size:12px; letter-spacing:.16em; white-space:nowrap;
+  color:rgba(255,255,255,.1); background:linear-gradient(rgba(255,255,255,.06), rgba(255,255,255,0) 45%), #0a0a0b;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.9), inset 0 1px 3px rgba(0,0,0,.9), 0 1px 0 rgba(255,255,255,.05)}
+.tell.on{--c:var(--amber); --cg:rgba(255,178,74,.35)}
+.tell.red{--c:#ff4a3d; --cg:rgba(255,74,61,.35)}
+.tell.on, .tell.red{color:var(--c); text-shadow:0 0 5px var(--c), 0 0 12px var(--c);
+  background:linear-gradient(rgba(255,255,255,.08), rgba(255,255,255,0) 45%), radial-gradient(ellipse at 50% 55%, var(--cg), transparent 75%), #0a0a0b}
+
+/* THE KEYS: NAN II's, glossy black and not new (b9_face.html, KEYS). Down = sunk in the slot;
+   lit = pushed in with the legend backlit and the LED on. */
+.key{position:relative; margin:0; padding:0; border:0; border-radius:4px 4px 5px 5px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  font-family:var(--narrow); font-stretch:condensed; font-weight:700; font-size:14px; letter-spacing:.16em; text-transform:uppercase;
+  color:rgba(228,221,204,.7); text-shadow:0 0 1px rgba(0,0,0,.9), 0 -1px 0 rgba(0,0,0,.7);
+  background-color:#141416;
+  background-image:
+    linear-gradient(rgba(255,255,255,.13), rgba(255,255,255,.04) 36%, rgba(255,255,255,0) 38%),
+    radial-gradient(ellipse 34% 22% at var(--wx,50%) var(--wy,60%), rgba(220,220,220,.04), transparent 70%),
+    linear-gradient(var(--sa,30deg), transparent 49.5%, rgba(255,255,255,.04) 50%, transparent 50.5%),
+    linear-gradient(#2b2b2e, #161618 55%, #0c0c0d);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.17), inset 0 -2px 0 rgba(0,0,0,.55), inset 1px 0 0 rgba(255,255,255,.04),
+             0 5px 0 #1a1a1c, 0 6px 0 #000, 0 8px 8px rgba(0,0,0,.85);
+  transform:translateY(-3px); transition:transform .06s, box-shadow .06s; cursor:pointer;
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent; outline:none; user-select:none}
+.key .lbl{padding-left:.16em; white-space:nowrap}
+.key .sub{font-size:10px; letter-spacing:.14em; opacity:.8; padding-left:.14em; white-space:nowrap}
+.key.down, .key.on, button.key:active{transform:translateY(1px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.1), inset 0 4px 6px rgba(0,0,0,.6), 0 1px 0 #1a1a1c, 0 2px 0 #000, 0 2px 3px rgba(0,0,0,.8)}
+.key.on, .key[data-armed]{color:var(--amber); text-shadow:0 0 6px var(--glow), 0 0 1px rgba(0,0,0,.6)}
+.key.on{box-shadow:inset 0 1px 0 rgba(255,255,255,.1), inset 0 4px 6px rgba(0,0,0,.6), 0 1px 0 #1a1a1c, 0 2px 0 #000, 0 0 14px var(--halo)}
+.key .pilot{position:absolute; top:6px; left:50%; width:8px; height:8px; margin-left:-4px; border-radius:50%;
+  background:radial-gradient(circle at 35% 35%, #3a2c22, #120d0a 72%); box-shadow:inset 0 1px 1px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.1)}
+.key.on .pilot, .key.lit .pilot{background:radial-gradient(circle at 38% 35%, #fff 0 12%, var(--amber) 46%); box-shadow:0 0 9px 1px var(--amber), 0 1px 0 rgba(255,255,255,.1)}
+.key.haspilot{padding-top:9px}
+.key svg{width:15px; height:15px; fill:currentColor}
+.exit{flex:none; width:112px; height:50px}
+.b9padon{outline:2px solid var(--amber)!important; outline-offset:3px}
+
+/* A MODULE: a raised panel screwed to the housing, its name printed on it beside the stripe */
+.module{position:relative; min-height:0; margin:0; padding:28px 10px 10px; border-radius:10px;
+  background:
+    radial-gradient(circle at 10px 10px, #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at calc(100% - 10px) 10px, #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at 10px calc(100% - 10px), #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at calc(100% - 10px) calc(100% - 10px), #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    linear-gradient(#1b1b1d, #111112);
+  box-shadow:inset 1px 1px 0 rgba(255,255,255,.1), inset -1px -2px 0 rgba(0,0,0,.85), 0 0 0 1px #050506, 0 7px 18px rgba(0,0,0,.65)}
+.module > .label{position:absolute; top:8px; left:24px; right:24px; display:flex; align-items:center; gap:12px;
+  font-stretch:condensed; font-weight:700; font-size:12px; letter-spacing:.26em; text-transform:uppercase;
+  color:var(--legend); text-shadow:0 -1px 0 rgba(0,0,0,.8); white-space:nowrap}
+.module > .label::after{content:''; flex:1; height:6px; opacity:.7; background:var(--stripe)}
+.module > .label b{font-weight:700; color:var(--amber); text-shadow:0 0 6px rgba(255,178,74,.4)}
+.screen{position:relative; overflow:hidden; border-radius:6px; background:var(--screen);
+  box-shadow:inset 0 3px 9px rgba(0,0,0,.95), inset 0 0 0 1px rgba(0,0,0,.9), 0 1px 0 rgba(255,255,255,.06)}
+/* THE GLASS: still scanlines and darker corners over every screen. Nothing here pulses. */
+.screen::after, .disp::after{content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; z-index:3;
+  background:repeating-linear-gradient(rgba(0,0,0,0) 0 2px, rgba(0,0,0,.17) 2px 3px),
+             radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 60%, rgba(0,0,0,.3) 100%)}
+.disp{position:relative; display:flex; align-items:center; justify-content:center; padding:0 12px;
+  background:var(--glass); border-radius:5px; font:400 13px var(--b9); letter-spacing:.08em; text-transform:uppercase;
+  color:var(--amber); text-shadow:0 0 8px rgba(255,178,74,.45); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  box-shadow:inset 0 3px 6px rgba(0,0,0,.95), inset 0 -1px 0 rgba(255,255,255,.05)}
+
+/* THE DECK: the drawing board on the left, the faces and the preview down the side */
+.deck{position:relative; min-height:0; display:grid; gap:14px; grid-template-columns:minmax(0,1fr) 300px}
+.boardmod{display:flex; flex-direction:column; gap:8px}
+.boardscreen{flex:1; min-height:0; display:grid; place-items:center; padding:8px}
+#board{display:block; touch-action:none; cursor:crosshair}
+.tools{flex:none; display:flex; gap:8px; height:44px; padding:0 2px}
+.tools .key.tool{flex:1.3 1 0}
+.tools .key.size{flex:none; width:52px; gap:3px}
+.tools .size .dot{display:block; border-radius:50%; background:currentColor; box-shadow:0 0 1px rgba(0,0,0,.8)}
+.tools .size.on .dot{box-shadow:0 0 6px var(--glow)}
+.tools .key{flex:1 1 0; min-width:0}
+.tools .gap{flex:none; width:6px}
+.tools .nudge{flex:none; width:42px}
+.status{flex:none; height:36px; justify-content:flex-start; text-align:left; white-space:normal; line-height:1.3;
+  font-size:12px; letter-spacing:.06em}
+.legend{flex:none; margin:-2px 4px 0; font-stretch:condensed; font-weight:700; font-size:11px; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--legend); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.legend b{color:rgba(255,178,74,.75); font-weight:700}
+
+.side{min-height:0; display:flex; flex-direction:column; gap:14px}
+.facesmod{flex:1; min-height:0; display:flex; flex-direction:column; gap:8px}
+.tabs{flex:none; display:flex; gap:6px; height:40px; padding:0 2px}
+.tabs .key{flex:1 1 0; min-width:0; font-size:13px}
+.thumbs{flex:1; min-height:0; display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); align-content:start;
+  gap:6px; padding:8px; overflow:auto; scrollbar-width:none}
+.thumbs::-webkit-scrollbar{display:none}
+.thumb{position:relative; display:flex; flex-direction:column; gap:3px; margin:0; padding:4px; border:0; border-radius:4px;
+  background:transparent; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; outline:none}
+.thumb canvas{display:block; width:100%; height:auto; border-radius:2px; background:#050506;
+  box-shadow:inset 0 0 0 1px rgba(255,178,74,.1)}
+.thumb .tn{font-stretch:condensed; font-weight:700; font-size:10px; letter-spacing:.12em; text-transform:uppercase;
+  color:rgba(255,178,74,.55); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left}
+.thumb.on{background:rgba(255,178,74,.09); box-shadow:inset 0 0 0 1.5px var(--amber)}
+.thumb.on .tn{color:var(--amber); text-shadow:0 0 6px rgba(255,178,74,.4)}
+.thumb.empty canvas{opacity:.45}
+.thumb.empty .tn::after{content:' \00B7  blank'}
+/* changed here and not on NAN II yet: a small orange dot, steady */
+.thumb.changed::after{content:''; position:absolute; top:7px; right:7px; width:6px; height:6px; border-radius:50%;
+  background:var(--orange); box-shadow:0 0 6px var(--orange)}
+
+.trymod{flex:none; display:flex; flex-direction:column; gap:8px}
+.tryscreen{background:#030303; line-height:0}
+#try{display:block}
+.trydisp{height:30px; font-size:11px; letter-spacing:.06em}
+
+.saverow{flex:none; display:flex; gap:10px; height:54px; padding:0 2px}
+.saverow .key{flex:1 1 0}
+.saverow .back{flex:0 0 96px}
+.saverow .save{font-size:16px}
+
+/* a narrow window (a browser on the Mac, say): one column, and the page scrolls */
+@media (max-width:1000px){
+  html,body{overflow:auto}
+  .housing{position:static; min-height:100%}
+  .deck{grid-template-columns:minmax(0,1fr)}
+  .boardscreen{height:58vw; flex:none}
+  .tools{flex-wrap:wrap; height:auto} .tools .key{flex:1 0 70px; height:46px}
+  .facesmod{min-height:420px}
+  .vents{display:none}
+  .brand h1{font-size:26px}
+}
+@media (prefers-reduced-motion: reduce){ .key{transition:none} }
+/* TOUR:BEGIN (css) -- the manual's tour, from ~/b9-music/B9 Theme/source/tour_kit.py */
+.tour{position:fixed; inset:0; z-index:2147483000; font-family:"Nimbus Sans Narrow","Liberation Sans Narrow","Arial Narrow",Helvetica,sans-serif}
+.tour[hidden]{display:none!important}
+.tour .shade{position:fixed; inset:0; background:rgba(4,3,2,.74)}
+.tour:not(.nospot) .shade{background:transparent}
+.tour .spot{position:fixed; border-radius:10px; pointer-events:none;
+  box-shadow:0 0 0 2px #ffb24a, 0 0 22px 3px rgba(255,178,74,.4), 0 0 0 200vmax rgba(4,3,2,.74)}
+.tour.nospot .spot{display:none}
+.tour .card{position:fixed; width:min(460px, calc(100vw - 32px)); padding:32px 18px 16px; border-radius:10px; color:#e8c07a;
+  background:
+    radial-gradient(circle at 10px 10px, #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at calc(100% - 10px) 10px, #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at 10px calc(100% - 10px), #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    radial-gradient(circle at calc(100% - 10px) calc(100% - 10px), #55555a 0 1.4px, #1f1f22 2.2px, #050506 3.2px, transparent 3.7px),
+    linear-gradient(#1b1b1d, #111112);
+  box-shadow:inset 1px 1px 0 rgba(255,255,255,.1), inset -1px -2px 0 rgba(0,0,0,.85), 0 0 0 1px #050506, 0 12px 30px rgba(0,0,0,.8)}
+.tour .lab{position:absolute; top:10px; left:22px; right:22px; display:flex; align-items:center; gap:10px; white-space:nowrap;
+  font-weight:700; font-stretch:condensed; font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:rgba(228,221,204,.66)}
+.tour .lab::after{content:''; flex:1; height:6px; opacity:.7; background:linear-gradient(#ffb24a 0 2px, #ff7a1f 2px 4px, #b8471f 4px 6px)}
+.tour h3{margin:2px 0 8px; font:400 22px/1.2 'B9 Sans', ui-monospace, monospace; letter-spacing:.08em; color:#ffb24a;
+  text-shadow:0 0 10px rgba(255,178,74,.4); text-transform:uppercase}
+.tour p{margin:0 0 14px; font-size:15px; line-height:1.5; letter-spacing:.02em; font-weight:400; font-stretch:normal; color:#e8c07a}
+.tour p b{color:#ffb24a; font-weight:700}
+.tour .row{display:flex; gap:8px; align-items:center}
+.tour .count{flex:1; font:400 12px 'B9 Sans', ui-monospace, monospace; letter-spacing:.1em; color:#a88d5c}
+.tour button{margin:0; padding:0 16px; height:42px; border:0; border-radius:4px 4px 5px 5px; cursor:pointer;
+  font:700 13px/1 "Nimbus Sans Narrow","Liberation Sans Narrow","Arial Narrow",Helvetica,sans-serif; font-stretch:condensed;
+  letter-spacing:.16em; text-transform:uppercase; color:rgba(228,221,204,.72); text-shadow:0 0 1px rgba(0,0,0,.9);
+  background:linear-gradient(rgba(255,255,255,.13), rgba(255,255,255,.04) 36%, rgba(255,255,255,0) 38%), linear-gradient(#2b2b2e, #161618 55%, #0c0c0d);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.17), inset 0 -2px 0 rgba(0,0,0,.55), 0 3px 0 #1a1a1c, 0 4px 0 #000, 0 5px 6px rgba(0,0,0,.8);
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent; outline:none}
+.tour button:active{transform:translateY(2px); box-shadow:inset 0 1px 0 rgba(255,255,255,.1), inset 0 4px 6px rgba(0,0,0,.6), 0 1px 0 #1a1a1c, 0 2px 0 #000}
+.tour button[data-t=next]{color:#ffb24a; text-shadow:0 0 6px rgba(255,178,74,.55)}
+.tour button:disabled{opacity:.35; cursor:default}
+/* a MANUAL key not yet opened on this screen: its LED lit, steady (nothing pulses) */
+.tour-new{color:#ffb24a!important}
+.tour-new .pilot{background:radial-gradient(circle at 38% 35%, #fff 0 12%, #ffb24a 46%)!important; box-shadow:0 0 9px 1px #ffb24a!important}
+/* TOUR:END (css) */
+</style>
+</head>
+<body>
+<div class="housing">
+  <header class="topbar">
+    <div class="brand">
+      <h1>NAN II FACEMAKER</h1>
+      <p>Draw NAN II's face · touch the glass or use the NAN II controller</p>
+    </div>
+    <div class="vents"></div>
+    <div class="well lamps">
+      <span class="tell" id="padLamp">NAN II CONTROLLER</span>
+      <span class="tell" id="linkLamp">LINK</span>
+    </div>
+    <button type="button" class="key exit haspilot" id="manualKey"><span class="pilot"></span><span class="lbl">Manual</span></button>
+    <button type="button" class="key exit" id="exitKey" hidden><span class="lbl">Exit</span></button>
+  </header>
+
+  <main class="deck">
+    <section class="module boardmod">
+      <div class="label">Drawing board <b id="boardName">Idle</b></div>
+      <div class="screen boardscreen" id="boardScreen"><canvas id="board"></canvas></div>
+      <div class="tools" id="tools">
+        <button type="button" class="key haspilot tool on" id="brushKey"><span class="pilot"></span><span class="lbl">Brush</span></button>
+        <button type="button" class="key haspilot tool" id="eraseKey"><span class="pilot"></span><span class="lbl">Erase</span></button>
+        <span class="gap"></span>
+        <button type="button" class="key size on" id="size1" aria-label="Brush 1 capsule across"><i class="dot" style="width:5px;height:5px"></i><span class="sub">1</span></button>
+        <button type="button" class="key size" id="size2" aria-label="Brush 3 capsules across"><i class="dot" style="width:9px;height:9px"></i><span class="sub">3</span></button>
+        <button type="button" class="key size" id="size3" aria-label="Brush 5 capsules across"><i class="dot" style="width:14px;height:14px"></i><span class="sub">5</span></button>
+        <span class="gap"></span>
+        <button type="button" class="key" id="undoKey"><span class="lbl">Undo</span></button>
+        <button type="button" class="key" id="redoKey"><span class="lbl">Redo</span></button>
+      </div>
+      <div class="tools" id="tools2">
+        <button type="button" class="key" id="mirrorKey"><span class="lbl">Mirror</span><span class="sub">left to right</span></button>
+        <button type="button" class="key" id="clearKey"><span class="lbl">Clear</span></button>
+        <button type="button" class="key" id="poseKey"><span class="lbl">NAN II's pose</span><span class="sub">start from</span></button>
+        <span class="gap"></span>
+        <button type="button" class="key nudge" id="nudgeL" aria-label="Nudge left"><svg viewBox="0 0 16 16"><path d="M11 2 3 8l8 6z"/></svg></button>
+        <button type="button" class="key nudge" id="nudgeU" aria-label="Nudge up"><svg viewBox="0 0 16 16"><path d="M2 11 8 3l6 8z"/></svg></button>
+        <button type="button" class="key nudge" id="nudgeD" aria-label="Nudge down"><svg viewBox="0 0 16 16"><path d="M2 5l6 8 6-8z"/></svg></button>
+        <button type="button" class="key nudge" id="nudgeR" aria-label="Nudge right"><svg viewBox="0 0 16 16"><path d="M5 2l8 6-8 6z"/></svg></button>
+        <span class="gap"></span>
+        <button type="button" class="key haspilot" id="glassKey"><span class="pilot"></span><span class="lbl">Glass</span></button>
+        <button type="button" class="key haspilot" id="onionKey"><span class="pilot"></span><span class="lbl">Onion</span><span class="sub" id="onionSub">blink</span></button>
+      </div>
+      <div class="disp status" id="status">Loading NAN II's faces…</div>
+      <div class="legend"><b>NAN II controller</b> · stick moves · A paints · X/Y undo redo · L3 erase · R3 size · LB RB face · R-stick nudge · View glass · Menu save · B exit · edge: keys</div>
+    </section>
+
+    <aside class="side">
+      <section class="module facesmod">
+        <div class="label">Faces</div>
+        <div class="tabs" id="tabs"></div>
+        <div class="screen thumbs" id="thumbs"></div>
+      </section>
+      <section class="module trymod">
+        <div class="label">On NAN II's glass</div>
+        <div class="screen tryscreen"><canvas id="try"></canvas></div>
+        <div class="disp trydisp" id="tryDisp">Idle</div>
+      </section>
+      <div class="saverow">
+        <button type="button" class="key back" id="backKey"><span class="lbl">Put back</span></button>
+        <button type="button" class="key save haspilot" id="saveKey"><span class="pilot"></span><span class="lbl">Save to NAN II</span></button>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script>
+'use strict';
+/* TOUR:BEGIN (js) -- the manual's tour, from ~/b9-music/B9 Theme/source/tour_kit.py */
+const Tour = {
+  open: false, i: 0, list: [], steps: [], el: null, name: '', key: null, held: {}, primed: false,
+  init(name, steps, key) {
+    this.name = name; this.steps = steps; this.key = key || null;
+    const el = this.el = document.createElement('div');
+    el.className = 'tour nospot'; el.hidden = true;
+    el.innerHTML = '<div class="shade"></div><div class="spot"></div><div class="card" role="dialog" aria-live="polite">'
+      + '<div class="lab"></div><h3></h3><p></p><div class="row"><span class="count"></span>'
+      + '<button type="button" data-t="back">Back</button><button type="button" data-t="next">Next</button>'
+      + '<button type="button" data-t="close">Close</button></div></div>';
+    document.body.append(el);
+    el.querySelector('[data-t=back]').onclick = () => this.go(-1);
+    el.querySelector('[data-t=next]').onclick = () => this.go(1);
+    el.querySelector('[data-t=close]').onclick = () => this.close();
+    el.querySelector('.shade').onclick = () => this.go(1);          // a tap on the dimmed screen goes on
+    if (this.key) {
+      this.key.addEventListener('click', () => this.start());
+      try { if (!localStorage.getItem('b9-manual-seen:' + name)) this.key.classList.add('tour-new'); } catch (e) { /* no storage: no hint */ }
+    }
+    addEventListener('keydown', e => {
+      if (!this.open) return;
+      e.stopImmediatePropagation(); e.preventDefault();
+      if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') this.go(1);
+      else if (e.key === 'ArrowLeft') this.go(-1);
+      else if (e.key === 'Escape') this.close();
+    }, true);
+    addEventListener('resize', () => { if (this.open) this.show(); });
+  },
+  vis(e) { if (!e || e.closest('[hidden]')) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; },
+  start() {
+    this.list = this.steps.filter(s => !s.sel || [...document.querySelectorAll(s.sel)].some(e => this.vis(e)));
+    if (!this.list.length) return;
+    this.open = true; this.i = 0; this.primed = false; this.el.hidden = false;
+    this.show();
+    try { localStorage.setItem('b9-manual-seen:' + this.name, '1'); } catch (e) { /* not kept */ }
+    if (this.key) this.key.classList.remove('tour-new');
+  },
+  close() { this.open = false; this.el.hidden = true; },
+  go(d) {
+    const n = this.i + d;
+    if (n < 0) return;
+    if (n >= this.list.length) { this.close(); return; }
+    this.i = n; this.show();
+  },
+  show() {
+    const s = this.list[this.i], el = this.el, card = el.querySelector('.card');
+    el.querySelector('.lab').textContent = 'Manual · ' + this.name;
+    el.querySelector('h3').textContent = s.title;
+    el.querySelector('p').innerHTML = s.text;
+    el.querySelector('.count').textContent = (this.i + 1) + ' / ' + this.list.length;
+    el.querySelector('[data-t=back]').disabled = this.i === 0;
+    el.querySelector('[data-t=next]').textContent = this.i === this.list.length - 1 ? 'Done' : 'Next';
+    // the part being explained: every element the step names, as one lit box
+    let r = null;
+    if (s.sel) for (const e of document.querySelectorAll(s.sel)) {
+      if (!this.vis(e)) continue;
+      const q = e.getBoundingClientRect();
+      r = r ? { left: Math.min(r.left, q.left), top: Math.min(r.top, q.top), right: Math.max(r.right, q.right), bottom: Math.max(r.bottom, q.bottom) }
+            : { left: q.left, top: q.top, right: q.right, bottom: q.bottom };
+    }
+    el.classList.toggle('nospot', !r);
+    const W = innerWidth, H = innerHeight, pad = 6, gap = 16;
+    if (r) Object.assign(el.querySelector('.spot').style, { left: (r.left - pad) + 'px', top: (r.top - pad) + 'px',
+      width: (r.right - r.left + pad * 2) + 'px', height: (r.bottom - r.top + pad * 2) + 'px' });
+    // the card: under the part if it fits, else over it, else beside it (narrower, if that is
+    // what fits there -- a big part like a drawing board leaves only a strip), else in the middle
+    card.style.width = '';
+    let cw = card.offsetWidth, ch = card.offsetHeight;
+    let x = (W - cw) / 2, y = (H - ch) / 2;
+    if (r) {
+      const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+      const right = W - 8 - (r.right + pad + gap), left = r.left - pad - gap - 8;
+      if (r.bottom + pad + gap + ch <= H - 8) { y = r.bottom + pad + gap; x = cx - cw / 2; }
+      else if (r.top - pad - gap - ch >= 8) { y = r.top - pad - gap - ch; x = cx - cw / 2; }
+      else if (Math.max(right, left) >= 260) {
+        const room = Math.max(right, left);
+        if (room < cw) { card.style.width = room + 'px'; cw = card.offsetWidth; ch = card.offsetHeight; }
+        x = right >= left ? r.right + pad + gap : r.left - pad - gap - cw; y = cy - ch / 2;
+      }
+    }
+    card.style.left = Math.round(Math.max(8, Math.min(W - cw - 8, x))) + 'px';
+    card.style.top = Math.round(Math.max(8, Math.min(H - ch - 8, y))) + 'px';
+  },
+  // the NAN II controller while the tour is up: A or right goes on, left goes back, B or Start closes.
+  // Whatever is held when it opens (the A that opened it) waits to be let go.
+  pad(p) {
+    const btn = i => !!(p.buttons[i] && p.buttons[i].pressed), x = p.axes[0] || 0;
+    const now = { a: btn(0), b: btn(1), s: btn(9), l: btn(14) || x < -.5, r: btn(15) || x > .5 };
+    if (!this.primed) { this.held = now; this.primed = true; return; }
+    const edge = k => now[k] && !this.held[k];
+    if (edge('a') || edge('r')) this.go(1);
+    else if (edge('l')) this.go(-1);
+    else if (edge('b') || edge('s')) this.close();
+    this.held = now;
+  },
+};
+/* TOUR:END (js) */
+const $ = id => document.getElementById(id);
+const COLS = 64, ROWS = 36;
+const NARROW = '"Nimbus Sans Narrow","Liberation Sans Narrow","Arial Narrow",Helvetica,sans-serif';
+
+// ON NAN II: served from NAN II's games shelf. Only there does EXIT have somewhere to go.
+const ON_B9 = location.pathname.startsWith('/media/games/');
+// IN THE FACE: on NAN II's own screen, in the face's frame.
+const IN_FACE = (() => { try { return window.parent !== window && !!parent.document.getElementById('dock'); } catch (e) { return false; } })();
+// ON THE WEB: in the DAOMOTAN arcade (its sync marks every page it publishes). There is no
+// NAN II there to read or write, so the faces start from a copy of his real set (faces.json,
+// next to the page), Save keeps them in this browser, and Exit goes back to the arcade.
+const ON_WEB = !ON_B9 && !!window.DAOMOTAN_ARCADE;
+const WEB_SET = 'nan2-facemaker.web-set';
+
+// ---- the faces: the editor's slots, in its groups -------------------------
+const GROUPS = [
+  {tab:'Face',  states:['idle','listening','thinking','talking_1','talking_2','talking_3','confirming','asleep','blink']},
+  {tab:'Mouth', states:['viseme_rest','viseme_A','viseme_E','viseme_I','viseme_O','viseme_U','viseme_MBP','viseme_FV','viseme_L','viseme_CONS']},
+  {tab:'Feel',  states:['happy','sad','surprised','curious','annoyed','worried','alarm','love']},
+  {tab:'Mark',  states:['logo']},
+];
+const STATES = GROUPS.flatMap(g => g.states);
+const groupOf = n => GROUPS.find(g => g.states.includes(n)) || GROUPS[0];
+const NAMES = {idle:'Idle', listening:'Listening', thinking:'Thinking', talking_1:'Talk 1', talking_2:'Talk 2',
+  talking_3:'Talk 3', confirming:'Confirm', asleep:'Asleep', blink:'Blink', viseme_rest:'Rest', viseme_A:'A',
+  viseme_E:'E', viseme_I:'I', viseme_O:'O', viseme_U:'U', viseme_MBP:'M B P', viseme_FV:'F V', viseme_L:'L',
+  viseme_CONS:'Cons', happy:'Happy', sad:'Sad', surprised:'Surprised', curious:'Curious', annoyed:'Annoyed',
+  worried:'Worried', alarm:'Alarm', love:'Love', logo:'The mark'};
+const nameOf = n => NAMES[n] || n;
+const longName = n => (groupOf(n).tab === 'Mouth' ? 'Mouth ' : '') + nameOf(n);
+
+// The face each one is drawn against, for ONION.
+function partner(n){
+  if(n === 'idle') return 'blink';
+  if(n === 'logo') return '';
+  const m = /^talking_(\d)$/.exec(n);
+  if(m) return 'talking_' + (m[1] === '1' ? 3 : m[1] - 1);
+  if(n === 'viseme_rest') return 'idle';
+  if(n.startsWith('viseme_')) return 'viseme_rest';
+  return 'idle';
+}
+
+// ---- the lit-capsule colours (b9_face.html PALETTE; the boss's LED setting) ----
+const PALETTE = {amber:'#ffb24a', orange:'#ff7a1f', bone:'#f2ecdd', green:'#39ff88', cyan:'#3fd8ff', red:'#ff4a4a'};
+let LIT = PALETTE.amber;
+function rgba(hex, a){
+  const n = parseInt(hex.slice(1), 16);
+  return 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' + (n & 255) + ',' + a + ')';
+}
+function makeSprite(color, size){                // the face's capsule, at any size
+  const s = document.createElement('canvas');
+  s.width = s.height = Math.max(1, Math.ceil(size));
+  const g = s.getContext('2d');
+  const w = size * .86, h = size * .52, rr = h / 2, x = size / 2, y = size / 2;
+  g.beginPath();
+  g.moveTo(x - w/2 + rr, y - h/2); g.lineTo(x + w/2 - rr, y - h/2);
+  g.arc(x + w/2 - rr, y, rr, -Math.PI/2, Math.PI/2);
+  g.lineTo(x - w/2 + rr, y + h/2);
+  g.arc(x - w/2 + rr, y, rr, Math.PI/2, -Math.PI/2);
+  g.closePath(); g.fillStyle = color; g.fill();
+  return s;
+}
+function rrect(g, x, y, w, h, r){
+  if(g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h);
+}
+
+// ---- NAN II's glass (b9_face.html): what his screen actually shows -------------
+// 1280x800, capsules 22 px apart, the 64x36 design grid centred on the 58x36
+// that fit, and the housing's window at x 12-1268, y 88-712 with round corners.
+const GLASS = (() => {
+  const W = 1280, H = 800, P = 22, cols = Math.floor(W / P), rows = Math.floor(H / P);
+  return {W, H, P, cols, rows, ox:(W - cols * P) / 2, oy:(H - rows * P) / 2,
+          win:{x0:12, y0:88, x1:1268, y1:712, r:16}};
+})();
+// design cell -> screen cell offset: frameMap's. The mark is centred by its own ink.
+function glassOff(name, cells){
+  let offC = Math.floor((GLASS.cols - COLS) / 2), offR = Math.floor((GLASS.rows - ROWS) / 2);
+  if(name === 'logo' && cells && cells.length){
+    let c0 = 1e9, c1 = -1e9, r0 = 1e9, r1 = -1e9;
+    for(const [c, r] of cells){ c0 = Math.min(c0, c); c1 = Math.max(c1, c); r0 = Math.min(r0, r); r1 = Math.max(r1, r); }
+    offC = Math.floor((GLASS.cols - (c1 - c0 + 1)) / 2) - c0;
+    offR = Math.floor((GLASS.rows - (r1 - r0 + 1)) / 2) - r0;
+  }
+  return [offC, offR];
+}
+// the housing's window, in design cells
+function glassWindow(off){
+  const w = GLASS.win, P = GLASS.P;
+  return {x0:(w.x0 - GLASS.ox) / P - off[0], y0:(w.y0 - GLASS.oy) / P - off[1],
+          x1:(w.x1 - GLASS.ox) / P - off[0], y1:(w.y1 - GLASS.oy) / P - off[1], r:w.r / P};
+}
+
+// ---- the drawing -----------------------------------------------------------
+const blank = () => Array.from({length:ROWS}, () => new Array(COLS).fill(false));
+const copyMap = m => m.map(r => r.slice());
+function mapToCells(m){ const out = []; for(let r = 0; r < ROWS; r++) for(let c = 0; c < COLS; c++) if(m[r][c]) out.push([c, r]); return out; }
+function cellsToMap(cells){ const m = blank(); for(const [c, r] of (cells || [])) if(r >= 0 && r < ROWS && c >= 0 && c < COLS) m[r][c] = true; return m; }
+function normCells(cells){
+  return JSON.stringify((cells || []).map(p => [p[0], p[1]]).sort((a, b) => a[1] - b[1] || a[0] - b[0]));
+}
+
+// ---- NAN II's own poses: the procedural faces from before the boss drew (b9_face_editor.html) ----
+function tEllipse(m,cx,cy,rx,ry){
+  if(rx<=0||ry<=0)return;
+  for(let r=Math.max(0,Math.floor(cy-ry-1));r<=Math.min(ROWS-1,Math.ceil(cy+ry+1));r++)
+    for(let c=Math.max(0,Math.floor(cx-rx-1));c<=Math.min(COLS-1,Math.ceil(cx+rx+1));c++){
+      const dx=(c-cx)/rx, dy=(r-cy)/ry;
+      if(dx*dx+dy*dy<=1) m[r][c]=true;
+    }
+}
+function tPunch(m,cx,cy,rad){
+  for(let r=Math.max(0,Math.floor(cy-rad-1));r<=Math.min(ROWS-1,Math.ceil(cy+rad+1));r++)
+    for(let c=Math.max(0,Math.floor(cx-rad-1));c<=Math.min(COLS-1,Math.ceil(cx+rad+1));c++){
+      const dx=c-cx, dy=r-cy;
+      if(dx*dx+dy*dy<=rad*rad) m[r][c]=false;
+    }
+}
+function tBar(m,cx,cy,hw,hh){
+  for(let r=Math.max(0,Math.round(cy-hh));r<=Math.min(ROWS-1,Math.round(cy+hh));r++)
+    for(let c=Math.max(0,Math.round(cx-hw));c<=Math.min(COLS-1,Math.round(cx+hw));c++) m[r][c]=true;
+}
+function tArc(m,cx,cy,hw,depth){
+  for(let c=Math.max(0,Math.floor(cx-hw));c<=Math.min(COLS-1,Math.ceil(cx+hw));c++){
+    const x=c-cx, yr=Math.round(cy+depth*(1-(x/hw)*(x/hw)));
+    if(yr>=0&&yr<ROWS) m[yr][c]=true;
+  }
+}
+function tEye(m,cx,cy,rad,px,py,ps){
+  tEllipse(m,cx,cy,rad,rad);
+  const pr=rad*0.42*(ps||1), off=rad-pr-0.6;
+  tPunch(m,cx+px*off,cy+py*off,pr);
+}
+function tEq(m,FX,MY,s,levels){
+  let energy=0; for(const v of levels) energy=Math.max(energy,v);
+  const spread=0.52+0.48*Math.min(1,energy/0.5);
+  const spacing=1.9*s*spread, halfMax=4.5*s, N=levels.length;
+  for(let i=0;i<N;i++) tBar(m,FX+(i-(N-1)/2)*spacing,MY,Math.max(0.45,0.55*s),Math.max(0,levels[i]*halfMax));
+}
+function tEllipse2Off(m,cx,cy,rx,ry){
+  if(rx<=0||ry<=0)return;
+  for(let r=Math.max(0,Math.floor(cy-ry-1));r<=Math.min(ROWS-1,Math.ceil(cy+ry+1));r++)
+    for(let c=Math.max(0,Math.floor(cx-rx-1));c<=Math.min(COLS-1,Math.ceil(cx+rx+1));c++){
+      const dx=(c-cx)/rx, dy=(r-cy)/ry;
+      if(dx*dx+dy*dy<=1) m[r][c]=false;
+    }
+}
+function tRing(m,cx,cy,rx,ry,th){ tEllipse(m,cx,cy,rx,ry); tEllipse2Off(m,cx,cy,Math.max(0.4,rx-th),Math.max(0.4,ry-th)); }
+function tHalfLid(m,cx,cy,rad){
+  for(let r=Math.max(0,Math.floor(cy-rad-1));r<Math.round(cy-rad*0.15);r++)
+    for(let c=Math.max(0,Math.floor(cx-rad-1));c<=Math.min(COLS-1,Math.ceil(cx+rad+1));c++){
+      const dx=c-cx, dy=r-cy;
+      if(dx*dx+dy*dy<=rad*rad*1.1) m[r][c]=false;
+    }
+}
+const FONT={ "B":["1110","1001","1110","1001","1110"], "9":["0110","1001","0111","0001","0110"] };
+function tText(m,txt,c0,r0,scale){
+  let cx=c0;
+  for(const ch of txt){
+    const gl=FONT[ch]; if(!gl){cx+=3*scale;continue;}
+    for(let r=0;r<gl.length;r++)for(let c=0;c<gl[r].length;c++){
+      if(gl[r][c]==="1")
+        for(let sr=0;sr<scale;sr++)for(let sc=0;sc<scale;sc++){
+          const rr=r0+r*scale+sr, cc=cx+c*scale+sc;
+          if(rr>=0&&rr<ROWS&&cc>=0&&cc<COLS)m[rr][cc]=true;
+        }
+    }
+    cx+=(gl[0].length+1)*scale;
+  }
+}
+function mouthEyes(m,s,FX,FY){ const eyeDX=11*s, eyeY=FY-5*s; tEye(m,FX-eyeDX,eyeY,7*s,0,0,1); tEye(m,FX+eyeDX,eyeY,7*s,0,0,1); }
+function template(state){
+  const m=blank();
+  const s=Math.min(COLS,ROWS)/48;
+  const FX=COLS/2, FY=ROWS/2;
+  const eyeDX=11*s, eyeY=FY-5*s, eL=FX-eyeDX, eR=FX+eyeDX, MY=FY+9*s;
+  const cw=i=>1-0.55*Math.abs(i-5)/5;
+  if(state==="asleep"){ tArc(m,eL,eyeY,5.5*s,-2.2*s); tArc(m,eR,eyeY,5.5*s,-2.2*s); tBar(m,FX,MY,2.5*s,0); }
+  else if(state==="thinking"){ tEye(m,eL,eyeY,7*s,-0.35,-0.75,1); tEye(m,eR,eyeY,7*s,-0.35,-0.75,1); tBar(m,FX-4*s,MY,1.6*s,Math.max(0,0.5*s)); }
+  else if(state==="blink"){ tBar(m,eL,eyeY,5.5*s,0); tBar(m,eR,eyeY,5.5*s,0); tEq(m,FX,MY,s,[0.05,0.08,0.05,0.09,0.06,0.1,0.06,0.09,0.05,0.08,0.05]); }
+  else if(state==="listening"){ tEye(m,eL,eyeY,8.5*s,0,0,0.85); tEye(m,eR,eyeY,8.5*s,0,0,0.85); tEq(m,FX,MY,s,[...Array(11)].map((_,i)=>0.30*cw(i))); }
+  else if(state==="confirming"){ tEye(m,eL,eyeY-0.8*s,7*s,0,0,1); tEye(m,eR,eyeY+0.8*s,7*s,0,0,1); tEq(m,FX,MY,s,[...Array(11)].map((_,i)=>Math.max(0,0.62*(1-Math.abs(i-5)/2.2)))); }
+  else if(state==="talking_1"){ tEye(m,eL,eyeY,7*s,0,0,1); tEye(m,eR,eyeY,7*s,0,0,1); tEq(m,FX,MY,s,[0.2,0.55,0.3,0.8,0.5,0.95,0.5,0.8,0.3,0.55,0.2]); }
+  else if(state==="talking_2"){ tEye(m,eL,eyeY,7*s,0,0,1); tEye(m,eR,eyeY,7*s,0,0,1); tEq(m,FX,MY,s,[0.5,0.2,0.75,0.4,0.9,0.35,0.9,0.4,0.75,0.2,0.5]); }
+  else if(state==="talking_3"){ tEye(m,eL,eyeY,7*s,0,0,1); tEye(m,eR,eyeY,7*s,0,0,1); tEq(m,FX,MY,s,[0.1,0.4,0.65,0.3,0.55,0.7,0.55,0.3,0.65,0.4,0.1]); }
+  else if(state.startsWith("viseme_")){
+    mouthEyes(m,s,FX,FY);
+    const v=state.slice(7);
+    if(v==="rest"){ tBar(m,FX,MY,2.5*s,0); }
+    else if(v==="A"){ tRing(m,FX,MY,3.4*s,2.6*s,1.1*s); }
+    else if(v==="E"){ tRing(m,FX,MY,4.6*s,1.6*s,0.9*s); }
+    else if(v==="I"){ tBar(m,FX,MY,4.6*s,Math.max(0,0.35*s)); }
+    else if(v==="O"){ tRing(m,FX,MY,2.4*s,2.4*s,1.0*s); }
+    else if(v==="U"){ tRing(m,FX,MY,1.6*s,1.7*s,0.8*s); }
+    else if(v==="MBP"){ tBar(m,FX,MY,3.4*s,0); }
+    else if(v==="FV"){ tBar(m,FX,MY-0.7*s,3.4*s,0); tBar(m,FX,MY+0.9*s,2.2*s,0); }
+    else if(v==="L"){ tRing(m,FX,MY,2.8*s,2.4*s,0.9*s); tBar(m,FX,MY+0.4*s,0.5*s,1.2*s); }
+  }
+  else if(state==="happy"){ tArc(m,eL,eyeY,5.5*s,-2.4*s); tArc(m,eR,eyeY,5.5*s,-2.4*s); tArc(m,FX,MY-1.2*s,4.5*s,2.0*s); }
+  else if(state==="sad"){ tEye(m,eL,eyeY,7*s,0,0.6,1); tEye(m,eR,eyeY,7*s,0,0.6,1); tArc(m,FX,MY+1.2*s,4.0*s,-1.8*s); }
+  else if(state==="surprised"){ tEye(m,eL,eyeY,8.5*s,0,0,0.55); tEye(m,eR,eyeY,8.5*s,0,0,0.55); tRing(m,FX,MY,2.2*s,2.4*s,1.0*s); }
+  else if(state==="curious"){ tEye(m,eL,eyeY,8*s,-0.3,-0.5,1); tEye(m,eR,eyeY,6*s,-0.3,-0.5,1); tBar(m,FX+1.5*s,MY,2.2*s,Math.max(0,0.35*s)); }
+  else if(state==="annoyed"){ tEye(m,eL,eyeY,7*s,0,0,1); tEye(m,eR,eyeY,7*s,0,0,1); tHalfLid(m,eL,eyeY,7*s); tHalfLid(m,eR,eyeY,7*s); tBar(m,FX,MY,3.4*s,0); }
+  else if(state==="worried"){ tEye(m,eL,eyeY,7*s,0.25,-0.55,1); tEye(m,eR,eyeY,7*s,0.25,-0.55,1); tArc(m,FX-1.6*s,MY,1.6*s,-0.9*s); tArc(m,FX+1.6*s,MY,1.6*s,0.9*s); }
+  else if(state==="alarm"){ tEye(m,eL,eyeY,8.5*s,0,0,0.5); tEye(m,eR,eyeY,8.5*s,0,0,0.5); tRing(m,FX,MY,2.8*s,2.9*s,1.1*s); tBar(m,FX,FY-13*s,0.5*s,1.4*s); tBar(m,FX,FY-9.6*s,0.5*s,0); }
+  else if(state==="love"){ tEye(m,eL,eyeY,7*s,0,0,1.35); tEye(m,eR,eyeY,7*s,0,0,1.35); tArc(m,FX,MY-1.0*s,4.0*s,1.8*s); }
+  else if(state==="logo"){
+    tEllipse(m,24,26,21,8); tEllipse(m,28,19,15,11); tEllipse(m,36,13,9,11); tEllipse2Off(m,46,14,7,7);
+    tEllipse(m,45,14,3.6,3.6); tEllipse2Off(m,46.4,14,1.4,1.4); tEllipse2Off(m,2,33,10,5); tText(m,"NAN II",50,27,2);
+  }
+  else{ tEye(m,eL,eyeY,7*s,0,0,1); tEye(m,eR,eyeY,7*s,0,0,1); tEq(m,FX,MY,s,[0.06,0.09,0.05,0.1,0.07,0.28,0.07,0.1,0.05,0.09,0.06]); }
+  return m;
+}
+
+// ---- the set ---------------------------------------------------------------
+// work: the faces as Facemaker holds them (name -> cells). b9Norm: NAN II's set as last
+// read or written, normalised, which is what "changed" is measured against. Faces in
+// the file that Facemaker has no card for (stress mouths, say) ride along untouched.
+const work = {};
+let b9Norm = {};
+let loaded = false;        // did we actually read NAN II's file? No read, no save.
+let active = 'idle', tab = 'Face';
+let map = blank();
+let glassOn = true, onionOn = false;
+const hist = {};           // each face its own undo
+
+function setB9(states){ b9Norm = {}; for(const k in states) b9Norm[k] = normCells(states[k]); }
+function changedFaces(){
+  const out = [];
+  for(const k of new Set([...Object.keys(work), ...Object.keys(b9Norm)]))
+    if(normCells(work[k]) !== (b9Norm[k] || '[]')) out.push(k);
+  return out;
+}
+const isDirty = () => changedFaces().length > 0;
+
+// ---- the board ---------------------------------------------------------------
+const Board = {cv:$('board'), g:null, cell:0, dpr:1, lit:null, dim:null, ghost:null, want:false};
+Board.g = Board.cv.getContext('2d');
+function sprites(){
+  const s = Board.cell * Board.dpr;
+  Board.lit = makeSprite(LIT, s); Board.dim = makeSprite(rgba(LIT, .07), s); Board.ghost = makeSprite(rgba(LIT, .28), s);
+}
+function fitBoard(){
+  const box = $('boardScreen'), cs = getComputedStyle(box);
+  const w = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const h = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const cell = Math.max(4, Math.floor(Math.min(w / COLS, h / ROWS)));
+  const dpr = window.devicePixelRatio || 1;
+  if(cell === Board.cell && dpr === Board.dpr) return;
+  Board.cell = cell; Board.dpr = dpr;
+  Board.cv.style.width = cell * COLS + 'px'; Board.cv.style.height = cell * ROWS + 'px';
+  Board.cv.width = cell * COLS * dpr; Board.cv.height = cell * ROWS * dpr;
+  sprites(); need();
+}
+function need(){ Try.dirty = true; if(Board.want) return; Board.want = true; requestAnimationFrame(drawBoard); }
+let ghostCache = {name:'', key:null, map:null};
+function ghostMap(){
+  const p = onionOn ? partner(active) : '';
+  if(!p || !work[p]) return null;
+  if(ghostCache.name !== p || ghostCache.key !== work[p]) ghostCache = {name:p, key:work[p], map:cellsToMap(work[p])};
+  return ghostCache.map;
+}
+function drawBoard(){
+  Board.want = false;
+  const g = Board.g, s = Board.cell * Board.dpr;
+  if(!s) return;
+  g.clearRect(0, 0, Board.cv.width, Board.cv.height);
+  const gm = ghostMap();
+  for(let r = 0; r < ROWS; r++) for(let c = 0; c < COLS; c++){
+    const on = map[r][c];
+    g.drawImage(on ? Board.lit : (gm && gm[r][c] ? Board.ghost : Board.dim), c * s, r * s);
+  }
+  if(glassOn) shadeGlass(g, s);
+  const tipAt = Pad.show && !Pad.focus ? Pad.cur : Board.hover;   // where the brush would land
+  if(tipAt){
+    const [c, r] = tipAt, lw = Math.max(1.5, Math.round(s / (Brush.size > 1 ? 10 : 7)));
+    g.lineWidth = Pad.painting ? lw * 1.6 : lw;
+    g.strokeStyle = Brush.tool === 'erase' ? '#ff7a1f' : '#ffd9a0';
+    for(const [dx, dy] of TIP[Brush.size]){
+      const x = c + dx, y = r + dy;
+      if(x >= 0 && x < COLS && y >= 0 && y < ROWS) g.strokeRect(x * s + lw / 2, y * s + lw / 2, s - lw, s - lw);
+    }
+  }
+  paintThumb(active, true);
+}
+// GLASS: shade what NAN II's housing hides, and outline the window he shows the face through
+function shadeGlass(g, s){
+  const w = glassWindow(glassOff(active, active === 'logo' ? mapToCells(map) : null));
+  const W = COLS * s, H = ROWS * s, x = w.x0 * s, y = w.y0 * s, ww = (w.x1 - w.x0) * s, hh = (w.y1 - w.y0) * s;
+  g.save();
+  g.beginPath(); g.rect(0, 0, W, H); rrect(g, x, y, ww, hh, w.r * s);
+  g.fillStyle = 'rgba(8,7,6,.66)'; g.fill('evenodd');
+  g.beginPath(); rrect(g, x, y, ww, hh, w.r * s);
+  g.strokeStyle = 'rgba(255,178,74,.4)'; g.lineWidth = Math.max(1, Board.dpr); g.stroke();
+  const fs = Math.round(11 * Board.dpr);
+  if(y > fs * 1.6){
+    g.font = '700 ' + fs + 'px ' + NARROW; g.fillStyle = 'rgba(255,178,74,.5)';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(active === 'logo' ? 'THE MARK IS CENTRED BY ITS OWN INK' : 'HIDDEN BEHIND NAN II’S HOUSING', W / 2, y / 2);
+  }
+  g.restore();
+}
+
+// ---- THE BRUSH: Brush lights capsules, Erase puts them out, under a round tip 1, 3 or 5
+// capsules across (the boss, 2026-09-25). Kept in this browser, like a painter's last brush.
+const TIP = {1:[[0, 0]], 2:[], 3:[]};
+for(let dy = -1; dy <= 1; dy++) for(let dx = -1; dx <= 1; dx++) TIP[2].push([dx, dy]);
+for(let dy = -2; dy <= 2; dy++) for(let dx = -2; dx <= 2; dx++) if(dx * dx + dy * dy <= 5) TIP[3].push([dx, dy]);
+const Brush = {tool:'brush', size:1};
+try{ const b = JSON.parse(localStorage.getItem('b9-facemaker.brush') || 'null');
+     if(b){ if(b.tool === 'erase') Brush.tool = 'erase'; if(TIP[b.size]) Brush.size = b.size; } }catch(_){}
+function keepBrush(){ try{ localStorage.setItem('b9-facemaker.brush', JSON.stringify(Brush)); }catch(_){} }
+function setTool(t){ Brush.tool = t; $('brushKey').classList.toggle('on', t === 'brush'); $('eraseKey').classList.toggle('on', t === 'erase'); keepBrush(); need(); }
+function setSize(n){ Brush.size = n; for(const k of [1, 2, 3]) $('size' + k).classList.toggle('on', k === n); keepBrush(); need(); }
+
+// ---- drawing: a stroke paints with the brush, or rubs out with Erase, under the tip ----
+let stroke = null, lastCell = null;
+function H(){ return hist[active] || (hist[active] = {u:[], r:[]}); }
+function snap(){ const h = H(); h.u.push(copyMap(map)); if(h.u.length > 80) h.u.shift(); h.r.length = 0; }
+function setCell(c, r){
+  for(const [dx, dy] of TIP[Brush.size]){
+    const x = c + dx, y = r + dy;
+    if(x >= 0 && x < COLS && y >= 0 && y < ROWS && map[y][x] !== stroke.to){ map[y][x] = stroke.to; need(); }
+  }
+}
+function strokeStart(c, r, id){
+  snap();
+  stroke = {to:Brush.tool === 'brush', id};
+  setCell(c, r); lastCell = [c, r];
+  clk(stroke.to ? 'dotOn' : 'dotOff'); need();
+}
+function strokeTo(c, r){                              // a straight line from the last cell, so a fast finger leaves no gaps
+  if(!stroke) return;
+  if(!lastCell){ setCell(c, r); lastCell = [c, r]; return; }
+  let [x0, y0] = lastCell;
+  const dx = Math.abs(c - x0), dy = -Math.abs(r - y0), sx = x0 < c ? 1 : -1, sy = y0 < r ? 1 : -1;
+  let err = dx + dy;
+  for(;;){
+    setCell(x0, y0);
+    if(x0 === c && y0 === r) break;
+    const e2 = 2 * err;
+    if(e2 >= dy){ err += dy; x0 += sx; }
+    if(e2 <= dx){ err += dx; y0 += sy; }
+  }
+  lastCell = [c, r];
+}
+function strokeEnd(){ if(!stroke) return; stroke = null; lastCell = null; commit(); }
+
+// every change lands in the working set at once
+function commit(){
+  const cells = mapToCells(map);
+  if(cells.length) work[active] = cells; else delete work[active];
+  paintThumb(active); lamps(); saveDraft(); need();
+}
+function edit(fn){ snap(); fn(); commit(); }
+function undo(){ const h = H(); if(!h.u.length){ clk('no'); return; } h.r.push(map); map = h.u.pop(); commit(); }
+function redo(){ const h = H(); if(!h.r.length){ clk('no'); return; } h.u.push(map); map = h.r.pop(); commit(); }
+function nudge(dx, dy){
+  edit(() => {
+    const m = blank();
+    for(let r = 0; r < ROWS; r++) for(let c = 0; c < COLS; c++)
+      if(map[r][c]){ const nc = c + dx, nr = r + dy; if(nc >= 0 && nc < COLS && nr >= 0 && nr < ROWS) m[nr][nc] = true; }
+    map = m;
+  });
+}
+const mirror = () => edit(() => { for(let r = 0; r < ROWS; r++) for(let c = 0; c < COLS / 2; c++) map[r][COLS - 1 - c] = map[r][c]; });
+const clearAll = () => edit(() => { map = blank(); });
+const pose = () => edit(() => { map = template(active); });
+
+// ---- pointer: one finger at a time ----
+function cellAt(e){
+  const b = Board.cv.getBoundingClientRect();
+  const c = Math.floor((e.clientX - b.left) / b.width * COLS), r = Math.floor((e.clientY - b.top) / b.height * ROWS);
+  return (c >= 0 && c < COLS && r >= 0 && r < ROWS) ? [c, r] : null;
+}
+Board.cv.addEventListener('pointerdown', e => {
+  if(stroke) return;
+  const p = cellAt(e); if(!p) return;
+  e.preventDefault();
+  padAway();
+  strokeStart(p[0], p[1], e.pointerId);
+  try{ Board.cv.setPointerCapture(e.pointerId); }catch(_){}
+});
+Board.cv.addEventListener('pointermove', e => {
+  if(e.pointerType === 'mouse'){ const h = cellAt(e); if(String(h) !== String(Board.hover)){ Board.hover = h; need(); } }
+  if(!stroke || stroke.id !== e.pointerId) return;
+  const p = cellAt(e);
+  if(!p){ lastCell = null; return; }                 // off the board: lift, and come back without a line
+  strokeTo(p[0], p[1]);
+});
+for(const ev of ['pointerup', 'pointercancel', 'lostpointercapture'])
+  Board.cv.addEventListener(ev, e => { if(stroke && stroke.id === e.pointerId) strokeEnd(); });
+Board.cv.addEventListener('pointerleave', () => { if(Board.hover){ Board.hover = null; need(); } });
+
+// ---- the faces: a card each, a tab for each group ----------------------------
+const thumbEls = {};
+function buildFaces(){
+  const tabs = $('tabs'), box = $('thumbs');
+  for(const g of GROUPS){
+    const k = document.createElement('button');
+    k.type = 'button'; k.className = 'key'; k.id = 'tab' + g.tab; k.dataset.tab = g.tab;
+    k.innerHTML = '<span class="lbl"></span>'; k.querySelector('.lbl').textContent = g.tab;
+    wear(k, k.id);
+    k.addEventListener('click', () => { clk('latch'); showTab(g.tab); });
+    tabs.append(k);
+    for(const n of g.states){
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'thumb'; b.dataset.n = n; b.dataset.g = g.tab;
+      const c = document.createElement('canvas'); c.width = 128; c.height = 72;
+      const s = document.createElement('span'); s.className = 'tn'; s.textContent = nameOf(n);
+      b.append(c, s);
+      b.addEventListener('click', () => { clk('down'); select(n); });
+      box.append(b); thumbEls[n] = b;
+    }
+  }
+}
+function showTab(t){
+  tab = t;
+  for(const k of $('tabs').children) k.classList.toggle('on', k.dataset.tab === t);
+  for(const n in thumbEls) thumbEls[n].hidden = thumbEls[n].dataset.g !== t;
+  if(Pad.focus && Pad.focus.classList.contains('thumb') && Pad.focus.hidden) ring(thumbEls[active].hidden ? null : thumbEls[active]);
+}
+function paintThumb(n, live){
+  const b = thumbEls[n]; if(!b) return;
+  const cv = b.firstChild, g = cv.getContext('2d');
+  g.fillStyle = '#050506'; g.fillRect(0, 0, cv.width, cv.height);
+  g.fillStyle = LIT;
+  let ink = 0;
+  if(live && n === active){
+    for(let r = 0; r < ROWS; r++) for(let c = 0; c < COLS; c++) if(map[r][c]){ g.fillRect(c * 2 + .2, r * 2 + .5, 1.6, 1.1); ink++; }
+  }else for(const [c, r] of (work[n] || [])){ g.fillRect(c * 2 + .2, r * 2 + .5, 1.6, 1.1); ink++; }
+  b.classList.toggle('empty', !ink);
+  if(!live) b.classList.toggle('changed', normCells(work[n]) !== (b9Norm[n] || '[]'));
+}
+function select(n){
+  if(!STATES.includes(n)) return;
+  if(stroke) strokeEnd();
+  const was = active;
+  active = n;
+  map = cellsToMap(work[n]);
+  if(thumbEls[was]){ thumbEls[was].classList.remove('on'); paintThumb(was); }
+  thumbEls[n].classList.add('on');
+  if(groupOf(n).tab !== tab) showTab(groupOf(n).tab);
+  if(!thumbEls[n].hidden) thumbEls[n].scrollIntoView({block:'nearest'});
+  $('boardName').textContent = longName(n);
+  const p = partner(n);
+  $('onionSub').textContent = p ? nameOf(p) : 'none';
+  Try.pick = null;
+  need();
+}
+function step(d){ select(STATES[(STATES.indexOf(active) + d + STATES.length) % STATES.length]); }
+
+// ---- ON NAN II'S GLASS: the face the way he wears it (b9_face.html pickFrame) ------
+// 66 ms a tick, the face's own. Idle blinks for 4 ticks in every 64; talking runs its
+// three mouths 2 ticks each; a mouth frame is heard in a sentence that uses all ten.
+const SAY = [['viseme_CONS',2],['viseme_A',2],['viseme_I',2],['viseme_rest',2],           // hi
+             ['viseme_MBP',2],['viseme_O',3],['viseme_CONS',2],['viseme_rest',3],          // boss,
+             ['viseme_L',2],['viseme_A',2],['viseme_FV',2],                                // love
+             ['viseme_I',1],['viseme_U',3],['viseme_CONS',1],                              // your
+             ['viseme_FV',2],['viseme_E',2],['viseme_I',1],['viseme_CONS',2],['viseme_rest',14]];  // face
+const SAY_LEN = SAY.reduce((a, s) => a + s[1], 0);
+const Try = {cv:$('try'), g:null, s:0, t:0, base:null, lit:null, shown:'', dirty:true, pick:null};
+Try.g = Try.cv.getContext('2d');
+function inkOf(n){ if(n === active){ for(const row of map) if(row.includes(true)) return true; return false; } return !!(work[n] && work[n].length); }
+function mouthFrame(n){ if(inkOf(n)) return n; if(n === 'viseme_CONS' && inkOf('viseme_E')) return 'viseme_E'; return null; }
+function tryPick(t){
+  const tb = groupOf(active).tab;
+  if(active === 'idle' || active === 'blink') return ((t % 64) < 4 && inkOf('blink')) ? 'blink' : 'idle';
+  const talk = 'talking_' + (Math.floor(t / 2) % 3 + 1);
+  if(/^talking_/.test(active)) return talk;
+  if(tb === 'Mouth'){
+    let k = t % SAY_LEN;
+    for(const [n, d] of SAY){ if(k < d) return mouthFrame(n) || talk; k -= d; }
+  }
+  return active;
+}
+function tryWords(){
+  const tb = groupOf(active).tab;
+  if(active === 'idle' || active === 'blink') return 'Idle · blinks every 4 s';
+  if(/^talking_/.test(active)) return 'Talking · three mouths in turn';
+  if(tb === 'Mouth') return 'Saying “Hi boss, love your face”';
+  if(active === 'logo') return 'The mark · while he boots';
+  return 'Held while he is ' + nameOf(active).toLowerCase();
+}
+function fitTry(){
+  const box = Try.cv.parentElement, W = GLASS.win.x1 - GLASS.win.x0, Hh = GLASS.win.y1 - GLASS.win.y0;
+  const cssW = Math.floor(box.clientWidth), cssH = Math.round(cssW * Hh / W);
+  if(!cssW) return;
+  const dpr = window.devicePixelRatio || 1;
+  Try.cv.style.width = cssW + 'px'; Try.cv.style.height = cssH + 'px';
+  Try.cv.width = Math.round(cssW * dpr); Try.cv.height = Math.round(cssH * dpr);
+  Try.s = Try.cv.width / W;
+  tryLayers();
+}
+function tryLayers(){
+  const s = Try.s, P = GLASS.P, w = GLASS.win;
+  if(!s) return;
+  Try.lit = makeSprite(LIT, P * s);
+  const dim = makeSprite(rgba(LIT, .07), P * s);
+  const b = Try.base = document.createElement('canvas');
+  b.width = Try.cv.width; b.height = Try.cv.height;
+  const g = b.getContext('2d');
+  g.fillStyle = '#030303'; g.fillRect(0, 0, b.width, b.height);
+  for(let sr = 0; sr < GLASS.rows; sr++) for(let sc = 0; sc < GLASS.cols; sc++)
+    g.drawImage(dim, (GLASS.ox + sc * P - w.x0) * s, (GLASS.oy + sr * P - w.y0) * s);
+  Try.dirty = true;
+}
+function drawTry(name){
+  const g = Try.g, s = Try.s, P = GLASS.P, w = GLASS.win;
+  if(!s || !Try.base) return;
+  const cells = name === active ? mapToCells(map) : (work[name] || []);
+  const [offC, offR] = glassOff(name, cells);
+  g.clearRect(0, 0, Try.cv.width, Try.cv.height);
+  g.save();
+  g.beginPath(); rrect(g, 0, 0, Try.cv.width, Try.cv.height, w.r * s); g.clip();
+  g.drawImage(Try.base, 0, 0);
+  for(const [c, r] of cells){
+    const sc = c + offC, sr = r + offR;
+    if(sc < 0 || sc >= GLASS.cols || sr < 0 || sr >= GLASS.rows) continue;
+    g.drawImage(Try.lit, (GLASS.ox + sc * P - w.x0) * s, (GLASS.oy + sr * P - w.y0) * s);
+  }
+  g.restore();
+}
+function tryTick(){
+  Try.t++;
+  const f = tryPick(Try.t);
+  if(f !== Try.shown || Try.dirty){ Try.shown = f; Try.dirty = false; drawTry(f); }
+  if(Try.pick !== active){ Try.pick = active; $('tryDisp').textContent = tryWords(); }
+}
+
+// ---- THE SOUNDS: the keys' own from NAN II's face (b9_face.html, THE SOUNDS), and a few of
+// Facemaker's, to the same rules: harmonic, soft, short, under 2.2 kHz, rising for yes.
+const SOUND_LEVEL = .4;
+const Snd = {ac:null, master:null, noise:null};
+function sndBoot(){
+  try{
+    if(Snd.ac){ if(Snd.ac.state === 'suspended') Snd.ac.resume(); return Snd.ac; }
+    const ac = Snd.ac = new (window.AudioContext || window.webkitAudioContext)();
+    Snd.master = ac.createGain(); Snd.master.gain.value = SOUND_LEVEL; Snd.master.connect(ac.destination);
+    Snd.noise = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+    const d = Snd.noise.getChannelData(0); let q = 0;
+    for(let i = 0; i < d.length; i++){ const w = Math.random() * 2 - 1; q = .97 * q + .03 * w; d[i] = (w * .5 + q * 3) * .5; }
+    return ac;
+  }catch(_){ return null; }
+}
+const SE = .0001;
+function sndEnv(g, t, peak, a, d){ g.gain.setValueAtTime(SE, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(SE, t + a + d); }
+function sndTone(o){
+  const ac = Snd.ac, a = o.a || .005, osc = ac.createOscillator(), g = ac.createGain();
+  osc.type = o.type || 'sine'; osc.frequency.setValueAtTime(o.f, o.t);
+  if(o.to) osc.frequency.exponentialRampToValueAtTime(o.to, o.t + (o.glide || o.d));
+  let node = osc;
+  if(o.lp){ const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lp; f.Q.value = .7; osc.connect(f); node = f; }
+  node.connect(g); sndEnv(g, o.t, o.peak, a, o.d); g.connect(Snd.master);
+  osc.start(o.t); osc.stop(o.t + a + o.d + .05);
+}
+function sndNoise(o){
+  const ac = Snd.ac, src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = Snd.noise; src.loop = true;
+  f.type = 'bandpass'; f.frequency.value = o.band; f.Q.value = o.q || 1;
+  sndEnv(g, o.t, o.peak, .002, o.dur);
+  src.connect(f); f.connect(g); g.connect(Snd.master);
+  src.start(o.t, Math.random()); src.stop(o.t + o.dur + .05);
+}
+function clk(kind){
+  const ac = sndBoot(); if(!ac) return;
+  try{
+    const t = ac.currentTime + .005;
+    if(kind === 'latch'){
+      sndTone({t, f:120, to:62, glide:.07, peak:.5, a:.002, d:.09, lp:900});
+      sndNoise({t, dur:.012, peak:.35, band:1500, q:1.1}); sndNoise({t:t + .026, dur:.008, peak:.22, band:1900, q:1.4});
+    }else if(kind === 'down'){
+      sndNoise({t, dur:.010, peak:.3, band:1700, q:1.2}); sndTone({t, f:150, to:90, glide:.04, peak:.2, a:.002, d:.05, lp:800});
+    }else if(kind === 'dotOn'){                       // a capsule lighting: G, soft
+      sndTone({t, f:392, peak:.06, a:.004, d:.06, lp:1800});
+    }else if(kind === 'dotOff'){                      // going out: the D under it
+      sndTone({t, f:293.7, peak:.05, a:.004, d:.05, lp:1500});
+    }else if(kind === 'yes'){                         // on his face: G up to D, the NAN II Theme's key
+      sndTone({t, f:392, peak:.1, a:.006, d:.08, lp:1800});
+      sndTone({t:t + .09, f:587.3, peak:.1, a:.006, d:.18, lp:1800});
+    }else if(kind === 'back'){                        // put back: D down to G
+      sndTone({t, f:587.3, peak:.08, a:.006, d:.08, lp:1800});
+      sndTone({t:t + .09, f:392, peak:.08, a:.006, d:.16, lp:1800});
+    }else if(kind === 'no'){
+      sndTone({t, f:196, to:150, glide:.06, peak:.08, a:.004, d:.08, lp:900});
+    }
+  }catch(_){}
+}
+
+// Each key's own years, from its id (b9_face.html, wear).
+function wear(b, id){
+  let h = 2166136261;
+  for(const ch of id){ h = Math.imul(h ^ ch.charCodeAt(0), 16777619); }
+  const r = n => ((h >>> n) & 255) / 255;
+  b.style.setProperty('--wx', (15 + r(0) * 70).toFixed(0) + '%');
+  b.style.setProperty('--wy', (25 + r(8) * 55).toFixed(0) + '%');
+  b.style.setProperty('--sa', (r(4) * 180).toFixed(0) + 'deg');
+}
+
+// ---- the status line, the lamps, the asks ------------------------------------
+let sayTimer = 0, sayHold = false;     // sayHold: a message is up, and the summary waits for it
+function say(text, ms){
+  $('status').textContent = text;
+  clearTimeout(sayTimer);
+  sayHold = ms !== 0;
+  if(sayHold) sayTimer = setTimeout(() => { sayHold = false; sayBase(); }, ms || 7000);
+}
+function sayBase(){
+  let t;
+  if(!loaded) t = ON_B9 ? 'NAN II didn’t answer, so there are no faces here and saving is off. Exit and try again in a moment.'
+                : ON_WEB ? 'The faces didn’t load. Reload the page to try again.'
+                        : 'Not connected to NAN II. Open NAN II Facemaker from NAN II’s Games shelf; saving is off here.';
+  else if(ON_WEB){
+    const n = changedFaces().length;
+    t = n ? n + (n === 1 ? ' face has' : ' faces have') + ' changed. Save keeps ' + (n === 1 ? 'it' : 'them') + ' in this browser.'
+          : 'These are NAN II’s faces, or the ones you saved here. Brush lights capsules, Erase puts them out: tap or drag.';
+  }else{
+    const n = changedFaces().length;
+    t = n ? n + (n === 1 ? ' face has' : ' faces have') + ' changed and ' + (n === 1 ? 'isn’t' : 'aren’t') +
+            ' on NAN II yet. Save to NAN II puts ' + (n === 1 ? 'it' : 'them') + ' on his face.'
+          : 'These are the faces NAN II is wearing. Brush lights capsules, Erase puts them out: tap or drag.';
+  }
+  say(t, 0);
+}
+function lamps(){
+  const dirty = loaded && isDirty();
+  $('saveKey').classList.toggle('lit', dirty);
+  $('linkLamp').className = 'tell ' + (loaded ? 'on' : 'red');
+  if(!Arm.key && !sayHold) sayBase();
+}
+// Asked twice: the first press arms the key and says what's at stake; the second does it.
+// Forgets after six seconds. No dialogs (a kiosk window swallows them).
+const Arm = {key:null, timer:0, was:''};
+const armed = k => Arm.key === k;
+function arm(k, msg){
+  disarm();
+  Arm.key = k; Arm.was = k.querySelector('.lbl').textContent;
+  k.dataset.armed = ''; k.querySelector('.lbl').textContent = 'Sure?';
+  say(msg, 6000);
+  Arm.timer = setTimeout(disarm, 6000);
+}
+function disarm(){
+  if(!Arm.key) return;
+  delete Arm.key.dataset.armed; Arm.key.querySelector('.lbl').textContent = Arm.was;
+  Arm.key = null; clearTimeout(Arm.timer);
+}
+
+// ---- NAN II's file: read, write, put back --------------------------------------------
+async function readB9(){
+  let d = null;
+  if(ON_WEB){
+    try{ d = JSON.parse(localStorage.getItem(WEB_SET) || 'null'); }catch(_){ d = null; }
+    if(d && d.states) return d;
+    try{ const r = await fetch('faces.json', {cache:'no-store'}); if(r.ok) return await r.json(); }catch(_){}
+    return null;
+  }
+  try{
+    const r = await fetch('/api/expressions?t=' + Date.now(), {cache:'no-store'});
+    if(r.ok) d = await r.json();
+  }catch(_){ /* not on NAN II, or NAN II is down */ }
+  return d;
+}
+function takeSet(st){
+  for(const k in work) delete work[k];
+  for(const k in st) if(Array.isArray(st[k])) work[k] = st[k];
+  setB9(work);
+}
+async function load(){
+  const d = await readB9();
+  if(d && !d.error){
+    takeSet(d.states || {});
+    loaded = true;
+    const back = restoreDraft();
+    for(const n of STATES) paintThumb(n);
+    select(back || 'idle');
+    lamps(); sayBase();
+    if(back) say(ON_WEB ? 'Your drawing from last time is back. Save keeps it in this browser.'
+                        : 'Your drawing from last time is back. It isn’t on NAN II yet: Save to NAN II puts it there.', 9000);
+    else if(!Object.keys(work).length) say('NAN II has no faces yet. Draw one and press Save to NAN II.', 9000);
+  }else{
+    loaded = false;
+    for(const k in work) delete work[k];
+    b9Norm = {};
+    for(const n of STATES) paintThumb(n);
+    select('idle');
+    lamps(); sayBase();
+    if(d && d.error) say('NAN II’s face file couldn’t be read (' + d.error + '). Saving is off, so it can’t be written over.', 0);
+  }
+}
+async function save(){
+  if(!loaded){ clk('no'); sayBase(); return; }
+  if(stroke) strokeEnd();
+  if(!isDirty()){ disarm(); clk('no'); say('Nothing to save: NAN II is already wearing these.'); return; }
+  const states = Object.assign({}, work);
+  if(!Object.keys(states).length){ disarm(); clk('no'); say('Every face is blank. NAN II needs at least one.'); return; }
+  if(ON_WEB){
+    try{ localStorage.setItem(WEB_SET, JSON.stringify({grid:[COLS, ROWS], states})); }
+    catch(_){ clk('no'); say('This browser won’t keep them (its storage is off). Your faces are still here.', 9000); return; }
+    setB9(states); clearDraft();
+    for(const n of STATES) paintThumb(n);
+    lamps(); clk('yes');
+    const at = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+    say('Saved in this browser at ' + at + '. Only NAN II’s own screen can put faces on the real NAN II.', 9000);
+    return;
+  }
+  const k = $('saveKey');
+  if(!armed(k)){ arm(k, 'This changes NAN II’s real face. Press Save to NAN II again to put these on him.'); return; }
+  disarm();
+  say('Putting the faces on NAN II…', 0);
+  try{
+    const r = await fetch('/api/expressions/save', {method:'POST', headers:{'Content-Type':'application/json'},
+                          body:JSON.stringify({grid:[COLS, ROWS], states})});
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    setB9(states); clearDraft();
+    for(const n of STATES) paintThumb(n);
+    lamps(); clk('yes');
+    const at = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+    say('On NAN II’s face at ' + at + '. His last set is kept once, as a backup.', 9000);
+  }catch(err){
+    clk('no');
+    say('NAN II didn’t take it (' + (err && err.message || err) + '). Your faces are still here; try again.', 9000);
+  }
+}
+async function putBack(){
+  if(!loaded || !isDirty()){ disarm(); clk('no'); say('Nothing to put back: these are the faces NAN II is wearing.'); return; }
+  const k = $('backKey');
+  if(!armed(k)){ arm(k, 'Put back throws away every change here and brings back the faces NAN II is wearing. Press again.'); return; }
+  disarm();
+  if(stroke) strokeEnd();
+  const d = await readB9();
+  if(d && !d.error) takeSet(d.states || {});
+  else { for(const n in work) delete work[n]; for(const n in b9Norm) work[n] = JSON.parse(b9Norm[n]); }
+  for(const n in hist) delete hist[n];
+  clearDraft();
+  map = cellsToMap(work[active]);
+  for(const n of STATES) paintThumb(n);
+  lamps(); need(); clk('back');
+  say(ON_WEB ? 'Put back: these are the faces you last saved here.' : 'Put back: these are the faces NAN II is wearing.');
+}
+
+// ---- THE DRAFT: a drawing not on NAN II yet waits in this browser for next time ----
+// Kept only against the NAN II set it was drawn over: if NAN II's faces changed in between (the
+// Settings editor, say), the draft is set aside rather than written back over them.
+const DRAFT = 'b9-facemaker.draft';
+function b9Sig(){
+  const s = Object.keys(b9Norm).sort().map(k => k + ':' + b9Norm[k]).join('|');
+  let h = 2166136261;
+  for(let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return (h >>> 0).toString(36) + '.' + s.length;
+}
+function saveDraft(){
+  if(!loaded) return;
+  try{
+    if(isDirty()) localStorage.setItem(DRAFT, JSON.stringify({base:b9Sig(), active, work}));
+    else localStorage.removeItem(DRAFT);
+  }catch(_){ /* no storage here: the draft just isn't kept */ }
+}
+function clearDraft(){ try{ localStorage.removeItem(DRAFT); }catch(_){} }
+function restoreDraft(){
+  let d = null;
+  try{ d = JSON.parse(localStorage.getItem(DRAFT) || 'null'); }catch(_){ return ''; }
+  if(!d || !d.work || typeof d.work !== 'object') return '';
+  if(d.base !== b9Sig()){ clearDraft(); return ''; }
+  for(const k in work) delete work[k];
+  for(const k in d.work) if(Array.isArray(d.work[k])) work[k] = d.work[k];
+  return STATES.includes(d.active) ? d.active : 'idle';
+}
+
+// ---- EXIT: back to NAN II's media library, on the Games tab (the games' EXIT GAME) ----
+let exiting = false;
+function exitGame(){
+  if(exiting || !(ON_B9 || ON_WEB)) return;
+  if(stroke) strokeEnd();
+  const k = $('exitKey');
+  if(loaded && isDirty() && !armed(k)){
+    arm(k, ON_WEB ? 'These faces aren’t saved yet. They’ll wait here for next time. Exit again to go.'
+                  : 'These faces aren’t on NAN II yet. They’ll wait here for next time. Exit again to go.');
+    return;
+  }
+  disarm(); saveDraft();
+  exiting = true;
+  const url = '../';
+  if(!IN_FACE){ location.href = url; return; }
+  fetch('/api/screen', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({src:url})})
+    .then(r => { if(!r.ok) throw 0; }).catch(() => { location.href = url; });
+}
+
+// ---- THE NAN II CONTROLLER ---------------------------------------------------------
+// On the board a cursor moves capsule by capsule; A draws the way a finger does. Pushed
+// past the board's edge, a lit ring walks the keys instead (the face's pad, THE PAD), A
+// presses, and B or pushing back toward the board returns to it.
+// After half a minute with no input the cursor and the ring go out, and stay where they
+// were: the next press only lights them again, in the same place (the boss, 2026-09-24).
+const PAD_REST = 30000;
+const Pad = {show:false, cur:[32, 18], held:{}, focus:null, painting:false, seen:false, last:0, asleep:false};
+function padAway(){ Pad.asleep = false; if(Pad.show || Pad.focus){ Pad.show = false; ring(null); need(); } }
+function padSleep(){ Pad.asleep = true; Pad.show = false; if(Pad.focus) Pad.focus.classList.remove('b9padon'); need(); }
+// Any input keeps it awake. True when the highlight was out, so the press only brings it back.
+function padWake(){
+  Pad.last = performance.now();
+  sndBoot();
+  if(Pad.asleep){ Pad.asleep = false; Pad.show = true; if(Pad.focus) Pad.focus.classList.add('b9padon'); need(); return true; }
+  if(!Pad.show && !Pad.focus){ Pad.show = true; need(); return true; }
+  return false;
+}
+function ring(el){
+  if(Pad.focus) Pad.focus.classList.remove('b9padon');
+  Pad.focus = el || null;
+  if(el){ el.classList.add('b9padon'); el.scrollIntoView({block:'nearest', inline:'nearest'}); }
+  need();
+}
+const visible = el => { if(el.hidden || el.closest('[hidden]')) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+const topKeys = () => [...document.querySelectorAll('.topbar .key')].filter(visible);
+const toolKeys = () => [...document.querySelectorAll('.tools .key')].filter(visible);
+const sideEls = () => [...document.querySelectorAll('.side .key, .side .thumb')].filter(visible);
+function regionOf(el){ return el.closest('.tools') ? 'tools' : el.closest('.side') ? 'side' : 'top'; }
+const mid = el => { const r = el.getBoundingClientRect(); return {x:r.left + r.width / 2, y:r.top + r.height / 2, r}; };
+function spatial(from, pool, dx, dy){
+  const a = mid(from);
+  let best = null, bs = Infinity;
+  for(const el of pool){
+    if(el === from) continue;
+    const b = mid(el);
+    const along = dx ? (b.x - a.x) * dx : (b.y - a.y) * dy;
+    if(along < 6) continue;
+    if(dx && Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top) <= 0) continue;   // sideways stays in its row
+    const across = dx ? Math.max(0, Math.abs(b.y - a.y) - (a.r.height + b.r.height) / 4)
+                      : Math.max(0, Math.abs(b.x - a.x) - (a.r.width + b.r.width) / 4);
+    if(along + across * 3 < bs){ bs = along + across * 3; best = el; }
+  }
+  return best;
+}
+function nearest(pool, x, y){
+  let best = null, bd = Infinity;
+  for(const el of pool){ const m = mid(el), d = Math.hypot(m.x - x, m.y - y); if(d < bd){ bd = d; best = el; } }
+  return best;
+}
+function boardPoint(c, r){ const b = Board.cv.getBoundingClientRect(); return {x:b.left + (c + .5) * b.width / COLS, y:b.top + (r + .5) * b.height / ROWS}; }
+function toBoard(el, edge){
+  const b = Board.cv.getBoundingClientRect(), m = mid(el);
+  const c = Math.max(0, Math.min(COLS - 1, Math.floor((m.x - b.left) / b.width * COLS)));
+  const r = Math.max(0, Math.min(ROWS - 1, Math.floor((m.y - b.top) / b.height * ROWS)));
+  Pad.cur = edge === 'bottom' ? [c, ROWS - 1] : edge === 'top' ? [c, 0] : [COLS - 1, r];
+  ring(null);
+}
+function leaveBoard(dx, dy){
+  const p = boardPoint(Pad.cur[0], Pad.cur[1]);
+  let el = null;
+  if(dy > 0) el = nearest(toolKeys(), p.x, Board.cv.getBoundingClientRect().bottom);
+  else if(dx > 0) el = nearest(sideEls(), Board.cv.getBoundingClientRect().right, p.y);
+  else if(dy < 0){ const t = topKeys(); if(t.length) el = nearest(t, p.x, Board.cv.getBoundingClientRect().top); }
+  if(el) ring(el);
+}
+function navKeys(dx, dy){
+  const el = Pad.focus, reg = regionOf(el);
+  const pool = reg === 'tools' ? toolKeys() : reg === 'side' ? sideEls() : topKeys();
+  const best = spatial(el, pool, dx, dy);
+  if(best){ ring(best); return; }
+  if(reg === 'tools'){
+    if(dy < 0) toBoard(el, 'bottom');
+    else if(dx > 0){ const m = mid(el); ring(nearest(sideEls(), m.x, m.y)); }
+  }else if(reg === 'side'){
+    if(dx < 0){
+      if(el.closest('.saverow')){ const t = toolKeys(); ring(t[t.length - 1]); }
+      else toBoard(el, 'right');
+    }else if(dy < 0){ const t = topKeys(), m = mid(el); if(t.length) ring(nearest(t, m.x, m.y)); }
+  }else{
+    if(dy > 0){ const s = sideEls(); if(s.length) ring(s[0]); }
+    else if(dx < 0) toBoard(el, 'top');
+  }
+}
+function move(dx, dy, fresh){
+  if(Pad.focus){ if(fresh) navKeys(dx, dy); return; }
+  const c = Pad.cur[0] + dx, r = Pad.cur[1] + dy;
+  if(c < 0 || c >= COLS || r < 0 || r >= ROWS){
+    if(fresh && !Pad.painting) leaveBoard(dx, dy);
+    return;
+  }
+  Pad.cur = [c, r];
+  if(Pad.painting) strokeTo(c, r);
+  need();
+}
+function pressDown(el){ el.classList.add('down'); setTimeout(() => el.classList.remove('down'), 110); }
+function padA(down){
+  if(down){
+    if(Pad.focus){ pressDown(Pad.focus); Pad.focus.click(); return; }
+    if(stroke) return;
+    Pad.painting = true;
+    strokeStart(Pad.cur[0], Pad.cur[1], 'pad');
+  }else if(Pad.painting){
+    Pad.painting = false;
+    if(stroke && stroke.id === 'pad') strokeEnd();
+    need();
+  }
+}
+function padLoop(){
+  requestAnimationFrame(padLoop);
+  let p = null;
+  try{ for(const g of navigator.getGamepads()) if(g && g.connected){ p = g; break; } }catch(_){ /* no pads here */ }
+  $('padLamp').classList.toggle('on', !!p);
+  const now = performance.now();
+  if((Pad.show || Pad.focus) && !Pad.asleep && !Pad.painting && now - Pad.last > PAD_REST) padSleep();
+  if(!p){ if(Pad.painting) padA(false); Pad.seen = false; return; }
+  if(Tour.open){ Tour.pad(p); Pad.seen = false; return; }   // the manual has the pad; what's held after waits
+  const btn = i => !!(p.buttons[i] && p.buttons[i].pressed), ax = i => p.axes[i] || 0;
+  if(!Pad.seen){                                     // what's already held (the A that opened this) waits to be let go
+    Pad.seen = true;
+    for(let i = 0; i < p.buttons.length; i++) if(btn(i)) Pad.held['b' + i] = true;
+  }
+  const lx = ax(0), ly = ax(1), fast = Math.max(Math.abs(lx), Math.abs(ly)) > .92;
+  for(const [k, dx, dy, down] of [['u', 0, -1, btn(12) || ly < -.5], ['d', 0, 1, btn(13) || ly > .5],
+                                   ['l', -1, 0, btn(14) || lx < -.5], ['r', 1, 0, btn(15) || lx > .5]]){
+    if(!down){ delete Pad.held[k]; continue; }
+    if(!Pad.held[k]){ Pad.held[k] = now + 260; if(!padWake()) move(dx, dy, true); }
+    else if(now >= Pad.held[k]){ Pad.held[k] = now + (fast ? 40 : 75); Pad.last = now; move(dx, dy, false); }
+  }
+  const rx = ax(2), ry = ax(3);
+  for(const [k, dx, dy, down] of [['nu', 0, -1, ry < -.6], ['nd', 0, 1, ry > .6], ['nl', -1, 0, rx < -.6], ['nr', 1, 0, rx > .6]]){
+    if(!down){ delete Pad.held[k]; continue; }
+    if(!Pad.held[k]){ Pad.held[k] = now + 320; padWake(); nudge(dx, dy); }
+    else if(now >= Pad.held[k]){ Pad.held[k] = now + 140; Pad.last = now; nudge(dx, dy); }
+  }
+  const edge = (i, fn) => {
+    const d = btn(i), k = 'b' + i;
+    if(d && !Pad.held[k]){ const woke = padWake(); if(!(woke && i === 0)) fn(true); else Pad.swallowA = true; }
+    else if(!d && Pad.held[k]){ if(i === 0 && Pad.swallowA) Pad.swallowA = false; else fn(false); }
+    Pad.held[k] = d;
+  };
+  if(Pad.painting) Pad.last = now;
+  edge(0, padA);                                     // A where the cursor was out only lights it
+  edge(1, d => { if(!d) return; if(Pad.focus){ clk('down'); ring(null); } else exitGame(); });
+  edge(2, d => { if(d){ clk('down'); undo(); } });
+  edge(3, d => { if(d){ clk('down'); redo(); } });
+  edge(4, d => { if(d){ clk('down'); step(-1); } });
+  edge(5, d => { if(d){ clk('down'); step(1); } });
+  edge(8, d => { if(d) $('glassKey').click(); });
+  edge(10, d => { if(d){ clk('latch'); setTool(Brush.tool === 'brush' ? 'erase' : 'brush'); say(Brush.tool === 'brush' ? 'Brush' : 'Erase', 1500); } });
+  edge(11, d => { if(d){ clk('latch'); setSize(Brush.size % 3 + 1); say('Brush ' + [0, 1, 3, 5][Brush.size] + ' across', 1500); } });
+  edge(9, d => { if(d){ pressDown($('saveKey')); $('saveKey').click(); } });
+}
+
+// ---- the keys ----------------------------------------------------------------------
+function key(id, fn, sound){
+  const b = $(id);
+  wear(b, id);
+  b.addEventListener('click', () => { if(sound !== false) clk(sound || 'down'); fn(); });
+}
+key('brushKey', () => setTool('brush'), 'latch');
+key('eraseKey', () => setTool('erase'), 'latch');
+for(const n of [1, 2, 3]) key('size' + n, () => setSize(n), 'latch');
+key('undoKey', undo);
+key('redoKey', redo);
+key('mirrorKey', mirror);
+key('clearKey', clearAll);
+key('poseKey', pose);
+key('nudgeL', () => nudge(-1, 0));
+key('nudgeU', () => nudge(0, -1));
+key('nudgeD', () => nudge(0, 1));
+key('nudgeR', () => nudge(1, 0));
+key('glassKey', () => { glassOn = !glassOn; $('glassKey').classList.toggle('on', glassOn); need(); }, 'latch');
+key('onionKey', () => {
+  if(!partner(active)){ clk('no'); return; }
+  clk('latch');
+  onionOn = !onionOn; $('onionKey').classList.toggle('on', onionOn); need();
+}, false);
+key('saveKey', save);
+key('backKey', putBack);
+key('exitKey', exitGame);
+
+// the Mac's keyboard: undo / redo, arrows nudge
+document.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if((e.ctrlKey || e.metaKey) && k === 'z'){ e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if((e.ctrlKey || e.metaKey) && k === 'y'){ e.preventDefault(); redo(); return; }
+  const d = {ArrowLeft:[-1, 0], ArrowRight:[1, 0], ArrowUp:[0, -1], ArrowDown:[0, 1]}[e.key];
+  if(d){ e.preventDefault(); nudge(d[0], d[1]); return; }
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
+  if(k === 'b') setTool('brush'); else if(k === 'e') setTool('erase'); else if(k === '1' || k === '2' || k === '3') setSize(+k);
+});
+
+// the LED colour the boss picked for NAN II's capsules (Settings), so the faces here are his
+async function ledColour(){
+  try{
+    const r = await fetch('/state?peek=1&t=' + Date.now(), {cache:'no-store'});
+    if(!r.ok) return;
+    const c = PALETTE[String((await r.json()).led || 'amber')];
+    if(c && c !== LIT){ LIT = c; sprites(); tryLayers(); for(const n of STATES) paintThumb(n); need(); }
+  }catch(_){ /* not on NAN II: amber */ }
+}
+
+// ---- boot ----------------------------------------------------------------------------
+buildFaces();
+showTab('Face');
+$('glassKey').classList.add('on');
+setTool(Brush.tool); setSize(Brush.size);
+// THE MANUAL: what each part of the screen is, one at a time
+Tour.init('NAN II Facemaker', [
+  {title:'NAN II Facemaker', text:'Draw the faces NAN II wears, capsule by capsule, and put them on his real face. This tour shows each part of the screen. <b>Next</b> goes on, <b>Close</b> stops any time.'},
+  {sel:'#boardScreen', title:'The drawing board', text:'NAN II\u2019s face as his screen draws it: 64 capsules across, 36 down. Tap or drag to paint. The shaded border is the <b>glass</b>: the part his housing hides, so nothing drawn there shows on his real face.'},
+  {sel:'#tools', title:'Brush, Erase and size', text:'<b>Brush</b> lights capsules and <b>Erase</b> puts them out; the lit key is the one in your hand. The dots pick the tip: 1, 3 or 5 capsules across. <b>Undo</b> and <b>Redo</b> step back and forward.'},
+  {sel:'#tools2', title:'Shaping the drawing', text:'<b>Mirror</b> copies the left half onto the right. <b>Clear</b> empties the face. <b>NAN II\u2019s pose</b> starts again from his original built-in face. The arrows nudge the whole drawing. <b>Glass</b> shows or hides the housing\u2019s shade. <b>Onion</b> ghosts the face this one goes with, like idle under blink.'},
+  {sel:'#status', title:'The readout', text:'What just happened, and whether your changes are on NAN II yet.'},
+  {sel:'.facesmod', title:'Faces', text:'Every face NAN II can wear, in four drawers: <b>Face</b> (idle, listening, thinking, talking), <b>Mouth</b> (the shape of his mouth for each sound he says), <b>Feel</b> (happy, sad and the rest) and <b>Mark</b> (his logo while he boots). Tap one to draw it. An orange dot means it has changed and is not on NAN II yet.'},
+  {sel:'.trymod', title:'On NAN II\u2019s glass', text:'A live preview at NAN II\u2019s real size, through his real window: it blinks, talks or holds the face the way he will.'},
+  {sel:'.saverow', title:'Save and Put back', text:'<b>Save to NAN II</b> puts your faces on his real face; press it twice, and he keeps his last set once as a backup. Its light is on while there are changes. <b>Put back</b> throws your changes away.'},
+  {sel:'.lamps', title:'The lamps', text:'<b>NAN II controller</b> lights when a controller is connected. <b>Link</b> is lit when NAN II\u2019s faces were read, and red when NAN II did not answer.'},
+  {sel:'.legend', title:'The NAN II controller', text:'The stick moves the cursor and <b>A</b> paints. <b>X</b> and <b>Y</b> undo and redo, <b>L3</b> swaps Brush and Erase, <b>R3</b> changes the size, <b>LB</b> and <b>RB</b> change the face. Push past the board\u2019s edge to reach the keys, and <b>B</b> comes back.'},
+  {sel:'#exitKey', title:'Exit', text:'Back to the Games shelf. A drawing not yet on NAN II waits here for next time.'},
+], $('manualKey'));
+if(ON_B9 || ON_WEB) $('exitKey').hidden = false;
+if(ON_WEB) $('saveKey').querySelector('.lbl').textContent = 'Save';
+fitBoard(); fitTry();
+if(window.ResizeObserver){
+  new ResizeObserver(fitBoard).observe($('boardScreen'));
+  new ResizeObserver(fitTry).observe(Try.cv.parentElement);
+}else addEventListener('resize', () => { fitBoard(); fitTry(); });
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(need);
+for(const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => sndBoot(), {passive:true});
+addEventListener('pagehide', saveDraft);
+setInterval(tryTick, 66);
+if(navigator.getGamepads) requestAnimationFrame(padLoop);
+if(!ON_WEB) ledColour();         // the LED colour is NAN II's; the web has no NAN II to ask
+load();
+</script>
+</body>
+</html>

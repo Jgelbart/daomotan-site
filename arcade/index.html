@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAN II Arcade</title>
+<meta name="description" content="Play the games from NAN II's own shelf in your browser: NAN II Saves The Humans, Down The Wormhole, Through The Black Hole, and more from DAOMOTAN Personal Robotics.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#020704">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23020704'/%3E%3Crect x='4' y='6' width='24' height='4' fill='%2362ff7e'/%3E%3Crect x='4' y='12' width='24' height='4' fill='%2348c460'/%3E%3Crect x='4' y='18' width='24' height='4' fill='%23339347'/%3E%3Crect x='4' y='24' width='24' height='4' fill='%23206330'/%3E%3C/svg%3E">
+<style>
+  /* NAN II's own letterforms, traced from the hull mark; served from here, like everything on this page */
+  @font-face{ font-family:'B9 Sans'; src:url('fonts/B9Sans.ttf') format('truetype'); font-display:swap; }
+  :root{
+    --bg:#020704;
+    --panel:#06120a;
+    --ink:#62ff7e;
+    --text:#c6f2d1;
+    --dim:#6fa37d;
+    --line:rgba(98,255,126,.22);
+    --glow:0 0 8px rgba(98,255,126,.45);
+    --mark:'B9 Sans', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+    --body:ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    --gutter:clamp(16px, 4vw, 48px);
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--body); font-size:16px; line-height:1.6; }
+  a{ color:inherit; }
+  .wrap{ max-width:1200px; margin:0 auto; padding:0 var(--gutter); }
+
+  header{ border-bottom:1px solid var(--line); }
+  .bar{ display:flex; align-items:center; justify-content:space-between; gap:16px; height:60px; }
+  .bar a{ text-decoration:none; color:var(--dim); letter-spacing:.12em; text-transform:uppercase; font-size:13px; }
+  .bar a:hover{ color:var(--ink); }
+  .bar b{ font-family:var(--mark); font-weight:400; color:var(--ink); letter-spacing:.14em; text-shadow:var(--glow); }
+
+  /* the tube: the boot screen, full width, never taller than the window */
+  .tube{ padding:clamp(12px, 3vw, 32px) var(--gutter) 0; }
+  #daomsys{ display:block; width:100%; max-width:1200px; max-height:78vh; aspect-ratio:16 / 10; margin:0 auto;
+            object-fit:contain; background:#020704; border-radius:18px;
+            box-shadow:0 0 0 1px var(--line), 0 0 60px rgba(98,255,126,.06); }
+
+  .intro{ padding:clamp(40px, 6vw, 72px) 0 12px; }
+  h1{ margin:0; font-family:var(--mark); font-weight:400; font-size:clamp(34px, 6vw, 64px); line-height:1.05;
+      letter-spacing:.06em; color:var(--ink); text-shadow:var(--glow); }
+  .intro p{ max-width:46em; margin:18px 0 0; }
+  .how{ color:var(--dim); font-size:14px; }
+  .touch{ display:none; margin:18px 0 0; padding:12px 16px; border:1px dashed var(--line); border-radius:10px; color:var(--text); font-size:14px; }
+  @media (pointer:coarse){ .touch{ display:block; } }
+
+  h2{ margin:clamp(40px, 6vw, 64px) 0 18px; font-family:var(--mark); font-weight:400; font-size:20px;
+      letter-spacing:.2em; color:var(--ink); display:flex; align-items:center; gap:14px; }
+  h2::after{ content:""; flex:1; height:1px; background:var(--line); }
+
+  .shelf{ display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; }
+  .cart{ display:flex; flex-direction:column; text-decoration:none; background:var(--panel);
+         border:1px solid var(--line); border-radius:16px; overflow:hidden;
+         transition:border-color .2s, box-shadow .2s, transform .2s; }
+  .cart:hover, .cart:focus-visible{ border-color:rgba(98,255,126,.7); box-shadow:0 0 24px rgba(98,255,126,.14); transform:translateY(-2px); outline:none; }
+  .shot{ position:relative; aspect-ratio:16 / 10; background:#000; }
+  .shot img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .shot::after{ content:""; position:absolute; inset:0; pointer-events:none;
+                background:repeating-linear-gradient(to bottom, rgba(0,0,0,.28) 0 1px, transparent 1px 3px); }
+  .cart .txt{ padding:18px 20px 20px; display:flex; flex-direction:column; gap:8px; flex:1; }
+  .cart h3{ margin:0; font-family:var(--mark); font-weight:400; font-size:18px; letter-spacing:.08em; color:var(--ink); line-height:1.25; }
+  .cart p{ margin:0; font-size:14px; flex:1; }
+  .cart .foot{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:6px; }
+  .cart .with{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); }
+  .cart .go{ font-family:var(--mark); font-size:14px; letter-spacing:.12em; color:var(--bg); background:var(--ink);
+             padding:6px 12px; border-radius:6px; white-space:nowrap; }
+
+  footer{ margin-top:clamp(56px, 8vw, 96px); border-top:1px solid var(--line); padding:28px 0 44px; font-size:13px; color:var(--dim); }
+  footer p{ margin:0 0 8px; max-width:60em; }
+
+  @media (max-width:960px){ .shelf{ grid-template-columns:repeat(2, 1fr); } }
+  @media (max-width:600px){ .shelf{ grid-template-columns:1fr; } #daomsys{ border-radius:12px; } }
+  @media (prefers-reduced-motion:reduce){ .cart{ transition:none; } .cart:hover{ transform:none; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap bar">
+    <a href="../">&larr; DAOMOTAN</a>
+    <b>NAN II ARCADE</b>
+  </div>
+</header>
+
+<div class="tube">
+  <canvas id="daomsys" width="1280" height="800" role="img"
+          aria-label="DAOMSYS boot screen: NAN II's drawing in green phosphor, with DAOMOTAN, Personal Robotics, and Unit NAN II: link offline."></canvas>
+</div>
+
+<main class="wrap">
+  <section class="intro">
+    <h1>NAN II ARCADE</h1>
+    <p>The games from NAN II's own shelf, playable right here in your browser. Every one was made by NAN II's inventor, Jody Morris Gelbart, and the games play NAN II's own theme music. Nothing to install.</p>
+    <p class="how">Play with a keyboard or a gamepad. Each game's MANUAL is on its title screen, and EXIT GAME brings you back here.</p>
+    <p class="touch">On a phone or tablet: the three games need a keyboard or a gamepad. Facemaker works with your finger.</p>
+  </section>
+
+  <h2>GAMES</h2>
+  <div class="shelf">
+    <a class="cart" href="saves-the-humans/">
+      <div class="shot"><img src="img/saves-the-humans.jpg" alt="The title screen of NAN II Saves The Humans" loading="lazy"></div>
+      <div class="txt">
+        <h3>NAN II SAVES THE HUMANS</h3>
+        <p>Landers are kidnapping the humans. Shoot one, catch whoever falls, and fly them home to the ground.</p>
+        <div class="foot"><span class="with">Keyboard · Gamepad</span><span class="go">PLAY &#9656;</span></div>
+      </div>
+    </a>
+    <a class="cart" href="down-the-wormhole/">
+      <div class="shot"><img src="img/down-the-wormhole.jpg" alt="The title screen of NAN II Down The Wormhole" loading="lazy"></div>
+      <div class="txt">
+        <h3>NAN II DOWN THE WORMHOLE</h3>
+        <p>Run the walls of a wireframe tunnel, then hold its rim against the appliances. Dodge, then defend.</p>
+        <div class="foot"><span class="with">Keyboard · Gamepad</span><span class="go">PLAY &#9656;</span></div>
+      </div>
+    </a>
+    <a class="cart" href="through-the-black-hole/">
+      <div class="shot"><img src="img/through-the-black-hole.jpg" alt="The title screen of NAN II Through The Black Hole" loading="lazy"></div>
+      <div class="txt">
+        <h3>NAN II THROUGH THE BLACK HOLE</h3>
+        <p>The smart appliances have taken over the other side. Three worlds: the Junkyard, the Drift and the Gauntlet.</p>
+        <div class="foot"><span class="with">Keyboard · Gamepad</span><span class="go">PLAY &#9656;</span></div>
+      </div>
+    </a>
+  </div>
+
+  <h2>MAKE THINGS</h2>
+  <div class="shelf">
+    <a class="cart" href="facemaker/">
+      <div class="shot"><img src="img/facemaker.jpg" alt="NAN II's idle face, drawn in amber capsules" loading="lazy"></div>
+      <div class="txt">
+        <h3>NAN II FACEMAKER</h3>
+        <p>Draw NAN II's faces capsule by capsule: idle, happy, sleepy, and the mouth shapes he talks with. It starts from his real faces, and keeps yours in your browser.</p>
+        <div class="foot"><span class="with">Touch · Mouse · Gamepad</span><span class="go">OPEN &#9656;</span></div>
+      </div>
+    </a>
+    <a class="cart" href="melody-cartridge/">
+      <div class="shot"><img src="img/melody-cartridge.jpg" alt="Melody Cartridge with the NAN II Theme loaded" loading="lazy"></div>
+      <div class="txt">
+        <h3>MELODY CARTRIDGE</h3>
+        <p>Type melodies on your keyboard in four tracks, then take them away as WAV and MIDI. The NAN II Theme is already loaded.</p>
+        <div class="foot"><span class="with">Keyboard · Mouse</span><span class="go">OPEN &#9656;</span></div>
+      </div>
+    </a>
+    <a class="cart" href="fossegrim/">
+      <div class="shot"><img src="img/fossegrim.jpg" alt="Fossegrim, the bard's instrument" loading="lazy"></div>
+      <div class="txt">
+        <h3>FOSSEGRIM</h3>
+        <p>The bard's instrument: sixteen scales and a drum matrix, played on a gamepad. It starts in the NAN II Theme's key.</p>
+        <div class="foot"><span class="with">Gamepad · Touch</span><span class="go">OPEN &#9656;</span></div>
+      </div>
+    </a>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>These are the same games that run on NAN II. As they get better there, they get better here.</p>
+    <p>NAN II Down The Wormhole uses three.js (MIT License, &copy; 2010&ndash;2023 three.js authors).</p>
+    <p>&copy; 2026 DAOMOTAN Personal Robotics &middot; <a href="../">daomotan home</a></p>
+  </div>
+</footer>
+
+<script src="daomsys.js"></script>
+</body>
+</html>
